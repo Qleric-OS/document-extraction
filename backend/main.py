@@ -50,6 +50,13 @@ def get_weather():
     try:
         weather_data = weather_service.get_weather(city)
         logger.info(f"Weather data retrieved for {city}")
+        
+        # Log any alerts for monitoring
+        if weather_data.get("alert_count", 0) > 0:
+            alert_count = weather_data["alert_count"]
+            alert_types = [alert["type"] for alert in weather_data.get("alerts", [])]
+            logger.warning(f"Weather alerts triggered for {city}: {alert_count} alerts - {alert_types}")
+        
         return jsonify(weather_data)
     
     except Exception as e:

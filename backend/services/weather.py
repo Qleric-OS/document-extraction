@@ -26,6 +26,10 @@ class WeatherService:
             "beijing": {"country": "China", "timezone": "CST"},
             "mumbai": {"country": "India", "timezone": "IST"}
         }
+        self.alert_thresholds = {
+            "extreme_heat": 30.0,  # Temperature threshold for extreme heat alert (°C)
+            "high_heat": 25.0      # Temperature threshold for high heat warning (°C)
+        }
     
     def get_weather(self, city: str) -> Dict[str, Any]:
         """
@@ -51,6 +55,21 @@ class WeatherService:
         # Get city info or use defaults
         city_info = self.cities.get(city_lower, {"country": "Unknown", "timezone": "UTC"})
         
+        # Check for heat alerts
+        alerts = []
+        if temperature >= self.alert_thresholds["extreme_heat"]:
+            alerts.append({
+                "type": "extreme_heat",
+                "severity": "high",
+                "message": f"Extreme heat warning: Temperature {temperature}°C exceeds threshold of {self.alert_thresholds['extreme_heat']}°C"
+            })
+        elif temperature >= self.alert_thresholds["high_heat"]:
+            alerts.append({
+                "type": "high_heat",
+                "severity": "medium",
+                "message": f"High heat warning: Temperature {temperature}°C exceeds threshold of {self.alert_thresholds['high_heat']}°C"
+            })
+        
         return {
             "city": city.title(),
             "country": city_info["country"],
@@ -60,7 +79,9 @@ class WeatherService:
             "humidity": humidity,
             "wind_speed": wind_speed,
             "condition": condition,
-            "timestamp": "2025-06-17T12:00:00Z"  # Mock timestamp
+            "timestamp": "2025-06-17T12:00:00Z",  # Mock timestamp
+            "alerts": alerts,
+            "alert_count": len(alerts)
         }
     
     def get_available_cities(self) -> list:
