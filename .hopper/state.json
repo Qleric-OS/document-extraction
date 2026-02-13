@@ -1,41 +1,42 @@
 {
-  "protocol": "Hopper v1.1",
+  "protocol": "Hopper",
   "system_directive": "STRICT ADHERENCE REQUIRED: Look for active_task_id. If a task's prompt is [LOCKED], you DO NOT have permission to work on it. Wait for READY status.",
-  "active_task_id": "15a1e194",
+  "ghost_mode_active": true,
+  "active_task_id": "7cca0d48",
   "tasks": [
     {
-      "id": "15a1e194",
-      "prompt": "Refactor backend/services/weather.py to include 'alert_thresholds' for extreme heat, then update the /weather endpoint in backend/main.py to flag these alerts, and",
+      "id": "7cca0d48",
+      "prompt": "Create test.py",
       "command": "",
       "status": "processing",
-      "timestamp": "15:38:31",
+      "timestamp": "16:16:20",
       "dependencies": [],
       "require_confirmation": false,
       "context_files": [
-        "backend/services/weather.py",
-        "backend/main.py"
+        "test.py"
       ],
-      "goal_description": "Successfully execute: Refactor backend/services/weather.py to include 'alert_thresholds' for extreme heat, then update the /weather endpoint in backend/main.py to flag these alerts, and",
+      "goal_description": "Successfully execute: Create test.py",
       "agent_directive": "READY",
       "metadata": {
         "burst_index": 0,
-        "total_burst": 2
+        "total_burst": 3
       },
       "verification_strategy": "none",
       "verification_attempts": [],
       "confidence_score": 1.0,
       "divergence_flag": false,
       "result": "Task released to agent. Awaiting implementation.",
-      "branch_name": "hopper-shadow-15a1e194",
+      "branch_name": "hopper-shadow-7cca0d48",
       "snapshot_before": "",
-      "snapshot_after": ""
+      "snapshot_after": "",
+      "protocol": "Hopper"
     },
     {
-      "id": "6e60ae83",
+      "id": "ff458249",
       "prompt": "[LOCKED] Intent hidden until directive is READY.",
       "command": "",
       "status": "queued",
-      "timestamp": "15:38:31",
+      "timestamp": "16:16:20",
       "dependencies": [],
       "require_confirmation": false,
       "context_files": [],
@@ -43,7 +44,7 @@
       "agent_directive": "WAIT",
       "metadata": {
         "burst_index": 1,
-        "total_burst": 2
+        "total_burst": 3
       },
       "verification_strategy": "none",
       "verification_attempts": [],
@@ -52,7 +53,33 @@
       "result": "",
       "branch_name": "",
       "snapshot_before": "",
-      "snapshot_after": ""
+      "snapshot_after": "",
+      "protocol": "Hopper"
+    },
+    {
+      "id": "78d648fd",
+      "prompt": "[LOCKED] Intent hidden until directive is READY.",
+      "command": "",
+      "status": "queued",
+      "timestamp": "16:16:20",
+      "dependencies": [],
+      "require_confirmation": false,
+      "context_files": [],
+      "goal_description": "[LOCKED]",
+      "agent_directive": "WAIT",
+      "metadata": {
+        "burst_index": 2,
+        "total_burst": 3
+      },
+      "verification_strategy": "none",
+      "verification_attempts": [],
+      "confidence_score": 1.0,
+      "divergence_flag": false,
+      "result": "",
+      "branch_name": "",
+      "snapshot_before": "",
+      "snapshot_after": "",
+      "protocol": "Hopper"
     }
   ]
 }
