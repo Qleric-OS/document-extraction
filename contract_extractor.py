@@ -1,6 +1,24 @@
 """
-# Copyright (C) 2025 Qleric
-# Licensed under AGPL-3.0 - see LICENSE file
+# ═══════════════════════════════════════════════════════════════════════════════
+# QLERIC DOCUMENT EXTRACTOR - V1
+# ═══════════════════════════════════════════════════════════════════════════════
+# Version: 1.0 (Public Release)
+# License: AGPL-3.0
+# Copyright (C) 2026 Qleric
+#
+# DESCRIPTION:
+# A production-grade utility for extracting structured data from PDF and DOCX 
+# documents with built-in verification and cross-referencing logic.
+#
+# CORE FEATURES:
+# 1. Verification Pass: Real-time quote validation against raw document text.
+# 2. Structured Analysis: Pattern-based derivation of rights and obligations.
+# 3. Multi-Format: Native support for PDF and Word documents.
+# 4. Financial Normalization: Locale-aware parsing of currency and tables.
+#
+# USAGE:
+# python contract_extractor.py my_document.pdf --fields parties,effective_date
+# ═══════════════════════════════════════════════════════════════════════════════
 """
 
 import atexit
@@ -13,7 +31,7 @@ import re
 import time
 import tracemalloc
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from functools import wraps
@@ -27,6 +45,14 @@ import spacy
 from anthropic import Anthropic, APIError, RateLimitError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+# DOCX support
+try:
+    from docx import Document as DocxDocument
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+    DocxDocument = None
+
 load_dotenv()
 
 # -------------------------------------------------------------------------
@@ -35,15 +61,16 @@ load_dotenv()
 
 DEFAULT_EXTRACTION_PROMPT = """You are an expert contract analyst. Extract the requested fields into JSON format.
 
-EXTRACTION TIER: {tier_label}
+EXTRACTION TIER: {label}
 
 FIELDS TO EXTRACT:
 {fields_list}
 
 Instructions:
 1. Extract the 'value' and 'verbatim_source' (exact substring) for each field.
-2. If not found, return null.
-3. Return ONLY JSON.
+2. If facets (e.g., 'favors', 'mutual', 'conditional') are explicitly requested in a field's description, include them in the JSON object for that field.
+3. If not found, return null for the 'value'.
+4. Return ONLY JSON.
 """
 
 DEFAULT_RECHECK_PROMPT = """You are an expert contract analyst doing a SECOND PASS review.
@@ -64,6 +91,164 @@ def get_anthropic_api_key() -> str:
         logger.warning("No ANTHROPIC_API_KEY found in .env")
         return ""
     return key
+
+
+import hashlib
+
+def stable_hash(text: str) -> str:
+    """Generate stable hash across sessions."""
+    if not isinstance(text, str):
+        text = str(text)
+    return hashlib.md5(text.encode()).hexdigest()[:8]
+
+def parse_days_from_text(text: str) -> Optional[int]:
+    """Robust duration parser for contracts."""
+    if not text:
+        return None
+    clean_text = text.lower().replace('-', ' ')
+    clean_text = re.sub(r'\b(a|an)\s+(day|week|month|year)', r'1 \2', clean_text)
+    
+    word_map = {
+        'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+        'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+        'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60, 'ninety': 90
+    }
+    
+    bracket_match = re.search(r'\((\d+)\)', clean_text)
+    if bracket_match:
+        val = int(bracket_match.group(1))
+    else:
+        for word, digit in word_map.items():
+            clean_text = re.sub(r'\b' + word + r'\b', str(digit), clean_text)
+        match = re.search(r'(\d+)', clean_text)
+        val = int(match.group(1)) if match else None
+
+    if val is None: return None
+    if 'year' in clean_text or 'annum' in clean_text: return val * 365
+    if 'month' in clean_text: return val * 30
+    if 'week' in clean_text: return val * 7
+    return val
+
+def parse_absolute_date(text: str) -> Optional[str]:
+    """Parse absolute dates from text."""
+    patterns = [r'(\d{1,2}/\d{1,2}/\d{4})', r'(\d{4}-\d{2}-\d{2})', r'(\w+ \d{1,2}, \d{4})']
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match: return match.group(1)
+    return None
+
+def summarize_value(value: str) -> str:
+    """Create a brief summary of a field value."""
+    if not value or not isinstance(value, str): return ""
+    return value[:100] + "..." if len(value) > 100 else value
+
+def parse_currency(text: str) -> Optional[float]:
+    """
+    Production-grade currency parser.
+    Handles: '$50k', '1.2M', 'USD 50,000.00', '€1.000,00' (EU format fallback), 'Free'
+    """
+    if not text:
+        return None
+
+    if isinstance(text, (int, float)):
+        return float(text)
+        
+    clean_text = text.lower().strip()
+    
+    # Quick exit for zero-cost terms
+    if any(x in clean_text for x in ['free', 'no cost', 'complimentary', 'included']):
+        return 0.0
+
+    # 1. Handle Multipliers (k, m, b)
+    multiplier = 1.0
+    if clean_text.endswith(('k', 'tho', 'thousand')):
+        multiplier = 1_000.0
+    elif clean_text.endswith(('m', 'mil', 'million', 'mn')):
+        multiplier = 1_000_000.0
+    elif clean_text.endswith(('b', 'bil', 'billion', 'bn')):
+        multiplier = 1_000_000_000.0
+        
+    # Remove text suffix after identifying multiplier
+    clean_text = re.sub(r'[a-z]+$', '', clean_text).strip()
+
+    # 2. Extract numeric part
+    match = re.search(r'[\d.,]+', clean_text)
+    if not match:
+        return None
+        
+    number_str = match.group(0)
+    
+    # 3. Handle Locale (Comma vs Dot)
+    try:
+        if ',' in number_str and '.' in number_str:
+            last_comma = number_str.rfind(',')
+            last_dot = number_str.rfind('.')
+            if last_comma > last_dot: # EU Style: 10.000,00
+                number_str = number_str.replace('.', '').replace(',', '.')
+            else: # US Style: 10,000.00
+                number_str = number_str.replace(',', '')
+        elif ',' in number_str:
+            if re.search(r',\d{3}$', number_str) or re.search(r',\d{3}\D', number_str):
+                 number_str = number_str.replace(',', '')
+            else:
+                 number_str = number_str.replace(',', '.')
+                 
+        val = float(number_str)
+        return val * multiplier
+    except ValueError:
+        return None
+
+def extract_currency(text: str) -> str:
+    """Extract currency code."""
+    if isinstance(text, (int, float)): return 'USD'
+    tx = text.upper()
+    if '$' in tx or 'USD' in tx: return 'USD'
+    if '€' in tx or 'EUR' in tx: return 'EUR'
+    if '£' in tx or 'GBP' in tx: return 'GBP'
+    return 'USD'
+
+def infer_payment_structure(field_name: str, value: str) -> Dict:
+    """Infer payment structure."""
+    if field_name == "total_contract_value": return {"type": "fixed"}
+    vl = value.lower()
+    if "monthly" in vl: return {"type": "recurring", "frequency": "monthly"}
+    if "annual" in vl: return {"type": "recurring", "frequency": "annual"}
+    return {"type": "fixed"}
+
+def parse_exceptions(text: str) -> List[str]:
+    """Parse common legal exceptions."""
+    exceptions = []
+    tx = text.lower()
+    if "gross negligence" in tx: exceptions.append("gross_negligence")
+    if "willful misconduct" in tx: exceptions.append("willful_misconduct")
+    return exceptions
+
+def parse_penalty_calculation(text: str) -> Dict:
+    """Parse penalty calculation logic."""
+    if "%" in text:
+        match = re.search(r'(\d+(?:\.\d+)?)%', text)
+        if match: return {"type": "percentage", "rate": float(match.group(1)), "period": "monthly"}
+    return {"type": "fixed", "amount": parse_currency(text) or 0}
+
+def link_to_obligation(field_name: str) -> str:
+    """Map penalty field to source obligation."""
+    mapping = {"late_fees": "payment_terms", "penalties": "sla_terms"}
+    return mapping.get(field_name, "general_obligations")
+
+def generate_risk_description(risk_type: str, field_data: Dict) -> str:
+    """Generate human-readable risk description."""
+    descriptions = {
+        "uncapped_liability": "No limit on liability exposure detected",
+        "asymmetric_termination": "Termination rights significantly favor one party",
+        "no_cure_period": "No period allowed to fix breaches before termination",
+        "no_exit_clause": "No right for termination for convenience found"
+    }
+    return descriptions.get(risk_type, f"Risk detected: {risk_type}")
+
+def extract_conditions_from_value(value: str) -> str:
+    """Extract preconditions from text."""
+    if not value or not isinstance(value, str): return ""
+    return value[:50] + "..." if len(value) > 50 else value
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -241,56 +426,16 @@ for category_fields in MASTER_FIELD_BANK.values():
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TIERED FIELD DEFINITIONS - Built from Master Bank
-# Note: 59-field MASTER_FIELD_BANK is a MENU for mix-match selection
-# Users extract MAX 25 fields per extraction (Enterprise tier limit)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Maximum fields allowed per extraction
-MAX_CUSTOM_FIELDS = 25
-
-TIER_FIELDS = {
-    # Essential: 9 core fields (1 credit)
-    # dates_parties(3) + financial_basic(3) + termination_basic(3) = 9
-    "essential": (
-        MASTER_FIELD_BANK["dates_parties"] |
-        MASTER_FIELD_BANK["financial_basic"] |
-        MASTER_FIELD_BANK["termination_basic"]
-    ),  # 9 fields
-
-    # Professional: 18 fields (3 credits)
-    # Essential(9) + liability_basic(4) + performance_basic(4) + 1 additional = 18
-    # We add ip_ownership as the +1 to reach 18
-    "professional": (
-        MASTER_FIELD_BANK["dates_parties"] |
-        MASTER_FIELD_BANK["financial_basic"] |
-        MASTER_FIELD_BANK["termination_basic"] |
-        MASTER_FIELD_BANK["liability_basic"] |
-        MASTER_FIELD_BANK["performance_basic"] |
-        {"ip_ownership"}  # +1 to reach 18
-    ),  # 9 + 4 + 4 + 1 = 18 fields
-
-    # Enterprise: 25 fields (5 credits) - Full predefined extraction
-    # Professional(18) + remaining ip_basic(2) + compliance_basic(5) = 25
-    "enterprise": (
-        MASTER_FIELD_BANK["dates_parties"] |
-        MASTER_FIELD_BANK["financial_basic"] |
-        MASTER_FIELD_BANK["termination_basic"] |
-        MASTER_FIELD_BANK["liability_basic"] |
-        MASTER_FIELD_BANK["performance_basic"] |
-        MASTER_FIELD_BANK["ip_basic"] |
-        MASTER_FIELD_BANK["compliance_basic"]
-    ),  # 9 + 4 + 4 + 3 + 5 = 25 fields
-    
-    # Full: 59 fields (for mix-match MENU reference only - NOT for direct extraction)
-    "full": ALL_FIELDS,
-}
-
-# Credit cost per tier
-TIER_CREDITS = {
-    "essential": 1,
-    "professional": 3,
-    "enterprise": 5,
-}
+# Default extraction fields (25 most critical fields for pass-1 / general analysis)
+DEFAULT_FIELDS = (
+    MASTER_FIELD_BANK["dates_parties"] |
+    MASTER_FIELD_BANK["financial_basic"] |
+    MASTER_FIELD_BANK["termination_basic"] |
+    MASTER_FIELD_BANK["liability_basic"] |
+    MASTER_FIELD_BANK["performance_basic"] |
+    MASTER_FIELD_BANK["ip_basic"] |
+    MASTER_FIELD_BANK["compliance_basic"]
+)
 
 # Contract type categories for classification
 CONTRACT_TYPES = [
@@ -453,6 +598,62 @@ def is_derived_field(field_name: str) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# FIELD FACETS - Structured interpretation metadata for extracted fields
+# ═══════════════════════════════════════════════════════════════════════════════
+# 
+# Facets answer "so what?" by adding structured interpretation to raw values.
+# These provide bias detection by identifying favors (buyer/seller).
+#
+# Available facets:
+#   - favors: "buyer" | "seller" | "mutual" | "neutral" - Who does this favor?
+#   - mutual: bool - Is this obligation bidirectional?
+#   - conditional: bool - Subject to conditions/triggers?
+#   - exceptions_present: bool - Are there carve-outs/exclusions?
+#   - time_bound: bool - Has explicit duration?
+#   - capped: bool - Has monetary/percentage cap?
+
+FACET_APPLICABLE_FIELDS = {
+    # Termination & Renewal
+    "termination_for_convenience": ["favors", "mutual", "conditional"],
+    "termination_for_cause": ["favors", "mutual", "conditional"],
+    "termination_notice_period": ["favors", "mutual"],
+    "renewal_terms": ["favors", "conditional"],
+    
+    # Liability & Risk
+    "liability_cap": ["favors", "mutual", "capped", "exceptions_present"],
+    "indemnification_clauses": ["favors", "mutual", "capped", "exceptions_present"],
+    "limitation_of_liability": ["favors", "exceptions_present"],
+    "insurance_requirements": ["mutual", "capped"],
+    
+    # IP & Confidentiality
+    "ip_ownership": ["favors"],
+    "confidentiality_period": ["mutual", "time_bound", "exceptions_present"],
+    "license_scope": ["favors", "time_bound"],
+    
+    # Performance & SLA
+    "sla_terms": ["favors", "conditional", "exceptions_present"],
+    "warranty_terms": ["favors", "time_bound", "capped"],
+    "penalties": ["favors", "capped", "conditional"],
+    "cure_periods": ["favors", "time_bound"],
+    
+    # Financial
+    "payment_terms": ["favors", "conditional"],
+    "late_fees": ["favors", "capped"],
+    "price_adjustments": ["favors", "conditional", "capped"],
+    
+    # Administrative
+    "assignment_rights": ["favors", "mutual", "conditional"],
+    "audit_rights": ["favors", "mutual", "conditional"],
+    "force_majeure": ["mutual", "exceptions_present"],
+}
+
+
+def get_applicable_facets(field_name: str) -> list:
+    """Get list of applicable facets for a field."""
+    return FACET_APPLICABLE_FIELDS.get(field_name, [])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # TEXT NORMALIZATION FOR FUZZY MATCHING
 # ═══════════════════════════════════════════════════════════════════════════════
 # 
@@ -526,7 +727,7 @@ def fuzzy_text_exists(needle: str, haystack: str, threshold: float = 0.85) -> bo
 
 
 # For backward compatibility
-SUPPORTED_KEYS = TIER_FIELDS["essential"]
+SUPPORTED_KEYS = DEFAULT_FIELDS
 
 INPUT_TOKEN_COST = 0.000003
 OUTPUT_TOKEN_COST = 0.000015
@@ -578,24 +779,125 @@ def performance_profiler(func):
 # -------------------------------------------------------------------------
 
 class ExtractionSource(Enum):
-    REGEX = "Regex"
-    SYSTEM_FALLBACK = "System Fallback"
-    INFERENCE = "Inference (Claude)"
-    NONE = "None"
+    LLM = "llm"
+    HEURISTIC = "heuristic"
+    SYSTEM_FALLBACK = "system_fallback"
+    INFERENCE = "inference"
 
+class ExtractionValueSource(Enum):
+    EXTRACTED = "extracted"
+    INFERRED = "inferred"
+    DEFAULT = "default"
+
+class ProvenanceType(Enum):
+    VERBATIM = "verbatim"
+    INFERRED = "inferred"
+    DEFAULTED = "defaulted"
+    USER_INPUT = "user_input"
+
+@dataclass
+class ExtractionValue:
+    value: Any
+    source: ExtractionValueSource
+    confidence: float = 1.0
+    default_label: Optional[str] = None
+
+    def to_dict(self):
+        return {
+            "value": self.value,
+            "source": self.source.value,
+            "confidence": self.confidence,
+            "default_label": self.default_label
+        }
+
+def normalize_analysis_payload(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalizes analysis fields for backend compatibility.
+    Provides verified resolution: EXTRACTED vs INFERRED vs DEFAULT.
+    """
+    if not isinstance(analysis, dict):
+        return {}
+
+    normalized: Dict[str, Any] = {}
+
+    def _resolution_source(item: Dict[str, Any], field_key: str) -> ExtractionValueSource:
+        # If it's a known derived field, it's inferred by definition
+        if is_derived_field(field_key):
+            return ExtractionValueSource.INFERRED
+            
+        source = str(item.get("source") or "").lower()
+        if source == ExtractionSource.SYSTEM_FALLBACK.value.lower():
+            return ExtractionValueSource.DEFAULT
+        
+        grounded = item.get("grounded", False)
+        if grounded:
+            return ExtractionValueSource.EXTRACTED
+            
+        return ExtractionValueSource.INFERRED
+
+    for key, field in analysis.items():
+        if not isinstance(field, dict) or key.startswith("_"):
+            normalized[key] = field
+            continue
+
+        item = dict(field)
+        val = item.get("value")
+        
+        # Determine source resolution
+        source = _resolution_source(item, key)
+        
+        # Calculate confidence
+        confidence = item.get("confidence_score") or (0.95 if item.get("grounded") else 0.6)
+        if source == ExtractionValueSource.DEFAULT:
+            confidence = 0.1
+
+        # Attach resolution object
+        item["resolution"] = ExtractionValue(
+            value=val,
+            source=source,
+            confidence=float(confidence)
+        ).to_dict()
+        
+        normalized[key] = item
+
+    return normalized
+
+def compute_document_complexity(analysis: Dict[str, Any]) -> str:
+    """Analytical complexity score based on extraction results."""
+    # Simple heuristic for open source version
+    field_count = len([k for k in analysis if not k.startswith("_")])
+    grounding_rate = sum(1 for k, v in analysis.items() if isinstance(v, dict) and v.get("grounded", False)) / max(field_count, 1)
+    
+    if grounding_rate > 0.9 and field_count > 15:
+        return "High (Structured)"
+    if grounding_rate < 0.5:
+        return "Complex (Non-Standard)"
+    return "Medium"
+
+@dataclass
+class ConfidenceModel:
+    score: float
+    threshold: float = 0.7
+    is_reliable: bool = field(init=False)
+
+    def __post_init__(self):
+        self.is_reliable = self.score >= self.threshold
 
 @dataclass
 class ExtractionResult:
-    value: str
+    value: Any
     source: ExtractionSource
     page_number: Optional[int] = None
     reference_snippet: Optional[str] = None
     bbox: Optional[List[List[float]]] = None
-    grounded: bool = False  # True if text evidence found in PDF (not "verified correct")
-    field_type: str = "extractive"  # "extractive" or "derived"
+    grounded: bool = False
+    field_type: str = "extractive"
+    facets: Optional[Dict[str, Any]] = None
+    provenance: Optional[Dict[str, Any]] = None
+    confidence_score: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "value": self.value,
             "source": self.source.value,
             "page_number": self.page_number,
@@ -604,6 +906,9 @@ class ExtractionResult:
             "grounded": self.grounded,
             "field_type": self.field_type,
         }
+        if self.facets:
+            result["facets"] = self.facets
+        return result
 
 
 @dataclass
@@ -638,6 +943,47 @@ class ContractExtractor:
         api_key = get_anthropic_api_key()
         self.client = Anthropic(api_key=api_key) if api_key else None
 
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # DERIVATION BUCKETS (The Knowledge Graph Routing Logic)
+        # ═══════════════════════════════════════════════════════════════════════════════
+
+        # Bucket 2: Time-Bound Obligations
+        self.TIME_BOUND_OBLIGATION_FIELDS = {
+            "payment_terms": {"action": "pay", "anchor": "invoice_issued"},
+            "termination_notice_period": {"action": "notify", "anchor": "intent_to_terminate"},
+            "confidentiality_period": {"action": "maintain_confidentiality", "anchor": "contract_effective", "timing_type": "continuous"},
+            "deliverables": {"action": "deliver", "anchor": "milestone_reached"},
+            "cure_periods": {"action": "cure_breach", "anchor": "breach_notice", "timing_type": "deadline"}
+        }
+
+        # Bucket 3: Termination & Renewal Rights
+        self.TERMINATION_RIGHT_FIELDS = {
+            "termination_for_convenience": "terminate",
+            "termination_for_cause": "terminate",
+            "renewal_terms": "renew",
+            "assignment_rights": "assign"
+        }
+
+        # Bucket 4: Financial Entities
+        self.FINANCIAL_COMMITMENT_FIELDS = {"total_contract_value": "total_contract_value", "payment_terms": "recurring"}
+        self.FINANCIAL_CAP_FIELDS = {"liability_cap": "liability"}
+        self.FINANCIAL_PENALTY_FIELDS = {"late_fees": "late_payment", "penalties": "sla_breach"}
+
+        # Bucket 7: Operational constraints
+        self.OPERATIONAL_OBLIGATION_FIELDS = {
+            "confidentiality_period": "maintain",
+            "data_protection": "comply",
+            "audit_rights": "audit",
+            "insurance_requirements": "maintain"
+        }
+
+        # Bucket 8: Null-Derived Risks
+        self.CRITICAL_MISSING_RISKS = {
+            "cure_periods": ("no_cure_period", "medium"),
+            "liability_cap": ("uncapped_liability", "critical"),
+            "termination_for_convenience": ("no_exit_clause", "high")
+        }
+
         try:
             self.patterns = self._build_comprehensive_patterns()
         except Exception as e:
@@ -661,7 +1007,7 @@ class ContractExtractor:
 
             key = filename.replace(".yaml", "")
             # Support all fields, not just essential
-            if key not in TIER_FIELDS["enterprise"]:
+            if key not in ALL_FIELDS:
                 continue
 
             try:
@@ -942,35 +1288,65 @@ class ContractExtractor:
 
     def _normalize_payment_schedule(self, tables: List[Dict]) -> List[Dict]:
         """
-        Normalize payment schedule tables into structured format.
-        
-        Returns list of:
-            {"milestone": str, "amount": str, "date": str, "description": str}
+        Normalize payment schedule tables into structured format with escalation detection.
         """
         normalized = []
         
         for table in tables:
-            if table["type"] != "payment_schedule":
+            if table["type"] not in ("payment_schedule", "fee_table"):
                 continue
             
             headers = [h.lower() for h in table["headers"]]
             
-            # Find column indices
+            # Find column indices for structured schedule fields
+            period_col = next((i for i, h in enumerate(headers) if any(kw in h for kw in ['period', 'year', 'term'])), None)
+            base_annual_col = next((i for i, h in enumerate(headers) if ('base' in h and 'annual' in h) or ('annual' in h and 'fee' in h)), None)
+            effective_annual_col = next((i for i, h in enumerate(headers) if ('effective' in h and 'annual' in h) or ('effective' in h and 'rate' in h)), None)
+            escalation_col = next((i for i, h in enumerate(headers) if any(kw in h for kw in ['escalation', 'cpi', 'increase', 'rate %', 'rate'])), None)
+
+            # Fallbacks
             amount_col = next((i for i, h in enumerate(headers) if any(kw in h for kw in ['amount', 'fee', 'price', 'cost', 'payment'])), None)
             date_col = next((i for i, h in enumerate(headers) if any(kw in h for kw in ['date', 'due', 'when'])), None)
             milestone_col = next((i for i, h in enumerate(headers) if any(kw in h for kw in ['milestone', 'phase', 'deliverable', 'description', 'item'])), None)
+
+            def _parse_money(value: str) -> Optional[float]:
+                return parse_currency(value)
+
+            def _parse_rate(value: str) -> Optional[float]:
+                if not value: return None
+                pct = re.search(r'(\d+(?:\.\d+)?)\s*%', value)
+                if pct: return float(pct.group(1)) / 100.0
+                return None
+
+            def _extract_year_bounds(period_text: str) -> Tuple[Optional[str], Optional[str]]:
+                if not period_text: return None, None
+                years = re.findall(r'\b(20\d{2})\b', period_text)
+                if not years: return None, None
+                start_year = int(years[0])
+                end_year = int(years[-1])
+                return f"{start_year:04d}-01-01", f"{end_year:04d}-12-31"
             
             for row in table["rows"]:
+                period_val = row[period_col] if period_col is not None and period_col < len(row) else ""
+                start_date, end_date = _extract_year_bounds(period_val)
+
+                effective_annual = _parse_money(row[effective_annual_col]) if effective_annual_col is not None and effective_annual_col < len(row) else None
+                if effective_annual is None and amount_col is not None and amount_col < len(row):
+                    effective_annual = _parse_money(row[amount_col])
+                
+                escalation_rate = _parse_rate(row[escalation_col]) if escalation_col is not None and escalation_col < len(row) else None
+
                 entry = {
-                    "milestone": row[milestone_col] if milestone_col is not None and milestone_col < len(row) else "",
-                    "amount": row[amount_col] if amount_col is not None and amount_col < len(row) else "",
-                    "date": row[date_col] if date_col is not None and date_col < len(row) else "",
+                    "description": row[milestone_col] if milestone_col is not None and milestone_col < len(row) else "Fee",
+                    "amount": effective_annual,
+                    "date": row[date_col] if date_col is not None and date_col < len(row) else start_date,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "escalation_rate": escalation_rate,
+                    "type": "recurring" if start_date or escalation_rate else "fixed",
                     "page": table["page"]
                 }
-                
-                # Only add if we have at least amount or milestone
-                if entry["amount"] or entry["milestone"]:
-                    normalized.append(entry)
+                normalized.append(entry)
         
         if normalized:
             logger.info(f"Normalized {len(normalized)} payment schedule entries")
@@ -1049,46 +1425,44 @@ class ContractExtractor:
         """
         Pass 2: Self-correction and gap-filling.
         
-        Reviews fields that returned "Not Found" or have suspicious values.
-        Uses a focused prompt to re-extract only problematic fields.
-        
-        Args:
-            initial_results: Results from Pass 1
-            pages: List of PageText objects
-            target_fields: Set of field names to validate (not tier lookup)
-        
-        Returns:
-            Updated results dict with filled gaps and corrections
+        Reviews fields that returned "Not Found" or have suspicious values, 
+        OR fields whose verbatim snippets failed grounding verification (Hallucination Guard).
         """
         if not self.client:
             return initial_results
         
-        # Identify fields that need a second look
+        full_text = self._format_pages_for_llm(pages)
         fields_to_recheck = []
         
         for field in target_fields:
             result = initial_results.get(field, {})
             value = result.get("value")
+            quote = result.get("verbatim_source")
             
-            # Check for clearly failed extractions
             needs_recheck = False
             
+            # Condition 1: Missing or Suspicious
             if value is None or value == "null" or value == "Not Found":
                 needs_recheck = True
-                logger.info(f"Pass 2: Re-checking '{field}' (was Not Found)")
-            elif isinstance(value, str) and len(value.strip()) < 3:
+                logger.info(f"Pass 2: Re-checking '{field}' (Gap found)")
+            elif isinstance(value, str) and len(value.strip()) < 3 and field != "currency":
                 needs_recheck = True
-                logger.info(f"Pass 2: Re-checking '{field}' (suspiciously short: '{value}')")
+                logger.info(f"Pass 2: Re-checking '{field}' (Suspiciously short)")
+            
+            # Condition 2: Hallucination Guard (Snippet verification)
+            if not needs_recheck and quote and quote != "null":
+                if not fuzzy_text_exists(quote, full_text):
+                    needs_recheck = True
+                    logger.warning(f"Pass 2: Re-checking '{field}' (Grounding failure/Potential hallucination)")
             
             if needs_recheck:
                 fields_to_recheck.append(field)
         
-        # Skip Pass 2 if everything looks good
         if not fields_to_recheck:
-            logger.info("Pass 2: All fields extracted successfully, skipping re-check")
+            logger.info("Pass 2: All fields verified, skipping re-check")
             return initial_results
         
-        logger.info(f"Pass 2: Re-checking {len(fields_to_recheck)} fields: {fields_to_recheck}")
+        logger.info(f"Pass 2: Re-analyzing {len(fields_to_recheck)} fields due to gaps or grounding failures")
         
         # Build focused re-extraction prompt
         field_descriptions_text = "\n".join([
@@ -1097,24 +1471,18 @@ class ContractExtractor:
         ])
         
         recheck_prompt_template = os.getenv("CLAUDE_RECHECK_PROMPT", DEFAULT_RECHECK_PROMPT)
-        recheck_prompt = f"{recheck_prompt_template}\n\nFIELDS TO RE-EXTRACT:\n{field_descriptions_text}"
+        recheck_prompt = f"{recheck_prompt_template}\n\nFIELDS TO RE-EXTRACT:\n{field_descriptions_text}\n\nNOTE: For fields previously extracted, your previous answer was suspicious or the quote provided was NOT found in the text. Look closer and provide an EXACT verbatim quote."
         
         # Format text for LLM
-        full_text = self._format_pages_for_llm(pages)
-        truncated_text, _ = self._smart_truncate(full_text, 80000)  # Smaller for focused search
-        
-        messages = [{"role": "user", "content": f"Re-analyze this contract:\n\n{truncated_text}"}]
+        truncated_text, _ = self._smart_truncate(full_text, 80000)
+        messages = [{"role": "user", "content": f"Re-analyze this contract for the missing or failed fields:\n\n{truncated_text}"}]
         
         try:
             response = self._call_claude_with_retry(
                 messages,
                 system_prompt=recheck_prompt,
-                max_tokens=2000  # Smaller output for focused fields
+                max_tokens=2000
             )
-            
-            if hasattr(response, "usage"):
-                cost = self._calculate_cost(response.usage.input_tokens, response.usage.output_tokens)
-                logger.info(f"Pass 2 cost: ${cost:.6f} ({response.usage.input_tokens} in, {response.usage.output_tokens} out)")
             
             content_text = response.content[0].text
             
@@ -1137,9 +1505,8 @@ class ContractExtractor:
                 if new_value and new_value != "null" and new_value != "Not Found":
                     updated_results[field] = new_result
                     fixes_applied += 1
-                    logger.info(f"Pass 2 FIX: '{field}' -> '{str(new_value)[:50]}...'")
             
-            logger.info(f"Pass 2 complete: {fixes_applied}/{len(fields_to_recheck)} gaps filled")
+            logger.info(f"Pass 2 complete: {fixes_applied}/{len(fields_to_recheck)} fields fixed or grounded.")
             return updated_results
             
         except Exception as e:
@@ -1147,12 +1514,12 @@ class ContractExtractor:
             return initial_results
 
 
-    def _build_schema_prompt(self, target_fields: set, tier_label: str = "CUSTOM") -> str:
+    def _build_schema_prompt(self, target_fields: set, label: str = "custom") -> str:
         """Build the extraction prompt based on target fields.
         
         Args:
             target_fields: Set of field names to extract
-            tier_label: Label for logging (e.g., 'essential', 'professional', 'CUSTOM')
+            label: Label for logging (e.g., 'default', 'custom')
         """
         fields = target_fields
         
@@ -1188,7 +1555,14 @@ class ContractExtractor:
                 for field in active_fields:
                     field_count += 1
                     description = FIELD_DESCRIPTIONS.get(field, field)
-                    section += f"\n{field_count}. {field}\n   - {description}"
+                    
+                    # Add facet requirements to description
+                    facets = get_applicable_facets(field)
+                    facet_instr = ""
+                    if facets:
+                        facet_instr = f" (Also determine facets: {', '.join(facets)})"
+                        
+                    section += f"\n{field_count}. {field}\n   - {description}{facet_instr}"
                 field_sections.append(section)
         
         fields_list = "\n".join(field_sections)
@@ -1200,13 +1574,13 @@ class ContractExtractor:
         try:
              # Check if the template has the formatting keys we expect
              if "{fields_list}" in prompt_template:
-                 return prompt_template.format(fields_list=fields_list, tier_label=tier_label.upper())
+                 return prompt_template.format(fields_list=fields_list, label=label.upper())
              else:
                  return f"{prompt_template}\n\nFIELDS TO EXTRACT:\n{fields_list}"
         except Exception:
              return f"{prompt_template}\n\nFIELDS TO EXTRACT:\n{fields_list}"
 
-    def _extract_all_fields_with_llm(self, pages: List[PageText], target_fields: set, tier_label: str = "custom", table_context: str = "") -> Dict[str, Dict[str, Any]]:
+    def _extract_all_fields_with_llm(self, pages: List[PageText], target_fields: set, label: str = "custom", table_context: str = "") -> Dict[str, Dict[str, Any]]:
         if not self.client:
             logger.warning("No API key available for LLM extraction.")
             return {}
@@ -1231,7 +1605,7 @@ class ContractExtractor:
             logger.info(f"Added {len(table_context)} chars of table context to LLM input")
 
         # Build prompt with target fields
-        schema_prompt = self._build_schema_prompt(target_fields, tier_label)
+        schema_prompt = self._build_schema_prompt(target_fields, label)
 
         messages = [
             {"role": "user", "content": f"Analyze this contract text:\n\n{truncated_text}"}
@@ -1242,7 +1616,7 @@ class ContractExtractor:
         max_tokens = 4500
 
         try:
-            logger.info(f"Sending request to Claude for {tier_label} extraction ({len(target_fields)} fields)...")
+            logger.info(f"Sending request to Claude for {label} extraction ({len(target_fields)} fields)...")
             response = self._call_claude_with_retry(
                 messages,
                 system_prompt=schema_prompt,
@@ -1286,7 +1660,7 @@ class ContractExtractor:
             logger.error(f"LLM Extraction failed: {e}", exc_info=True)
             return {}
 
-    def _extract_from_chunks(self, chunks: List[str], target_fields: set, tier_label: str = "custom", table_context: str = "") -> Dict[str, Dict[str, Any]]:
+    def _extract_from_chunks(self, chunks: List[str], target_fields: set, label: str = "custom", table_context: str = "") -> Dict[str, Dict[str, Any]]:
         """
         Extract from multiple chunks and merge results.
         
@@ -1304,20 +1678,20 @@ class ContractExtractor:
         for i, chunk in enumerate(modified_chunks):
             logger.info(f"Processing chunk {i + 1}/{len(modified_chunks)} ({len(chunk)} chars)")
             
-            chunk_result = self._extract_from_text_chunk(chunk, target_fields, tier_label)
+            chunk_result = self._extract_from_text_chunk(chunk, target_fields, label)
             if chunk_result:
                 all_results.append(chunk_result)
         
         # Merge results: prefer non-null values
         return self._merge_chunk_results(all_results, target_fields)
 
-    def _extract_from_text_chunk(self, text: str, target_fields: set, tier_label: str = "custom") -> Dict[str, Dict[str, Any]]:
+    def _extract_from_text_chunk(self, text: str, target_fields: set, label: str = "custom") -> Dict[str, Dict[str, Any]]:
         """Extract fields from a single text chunk."""
         if not self.client:
             return {}
         
         truncated, _ = self._smart_truncate(text, 100000)
-        schema_prompt = self._build_schema_prompt(target_fields, tier_label)
+        schema_prompt = self._build_schema_prompt(target_fields, label)
         
         messages = [
             {"role": "user", "content": f"Analyze this contract text:\n\n{truncated}"}
@@ -1370,6 +1744,113 @@ class ContractExtractor:
         logger.info(f"Merged {len(merged)} fields from {len(results_list)} chunks")
         return merged
 
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # OBJECT DERIVATION (The Knowledge Graph)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    def derive_objects(self, analysis: Dict) -> Dict:
+        """Pattern-based routing of flat fields into structured actionable objects."""
+        objects = {
+            "obligations": [], "rights": [], "risks": [],
+            "financial_commitments": [], "financial_caps": [], "financial_penalties": []
+        }
+        
+        for field_name, field_data in analysis.items():
+            if not isinstance(field_data, dict): continue
+            value = field_data.get("value")
+            if not value or value in ("Not Found", "null"): continue
+            
+            # Routing logic
+            if field_name in self.TIME_BOUND_OBLIGATION_FIELDS:
+                objects["obligations"].extend(self.derive_time_obligation(field_name, field_data))
+                
+            elif field_name in self.TERMINATION_RIGHT_FIELDS:
+                rights, risks = self.derive_termination_right(field_name, field_data)
+                objects["rights"].extend(rights)
+                objects["risks"].extend(risks)
+                
+            elif field_name in self.FINANCIAL_COMMITMENT_FIELDS:
+                objects["financial_commitments"].extend(self.derive_financial_commitment(field_name, field_data))
+                
+            elif field_name in self.FINANCIAL_CAP_FIELDS:
+                caps, risks = self.derive_financial_cap(field_name, field_data)
+                objects["financial_caps"].extend(caps)
+                objects["risks"].extend(risks)
+                
+            elif field_name in self.FINANCIAL_PENALTY_FIELDS:
+                objects["financial_penalties"].extend(self.derive_financial_penalty(field_name, field_data))
+                
+            elif field_name in self.OPERATIONAL_OBLIGATION_FIELDS:
+                objects["obligations"].extend(self.derive_operational_obligation(field_name, field_data))
+        
+        # Null-Derived Risks (The 'Secret Sauce')
+        objects["risks"].extend(self.derive_missing_field_risks(analysis))
+        return objects
+
+    def derive_time_obligation(self, field_name: str, field_data: Dict) -> List[Dict]:
+        config = self.TIME_BOUND_OBLIGATION_FIELDS[field_name]
+        facets = field_data.get("facets", {})
+        obligation = {
+            "id": f"obl_{field_name}_{stable_hash(field_data['value'])}",
+            "type": "obligation",
+            "action": config["action"],
+            "description": summarize_value(field_data["value"]),
+            "timing": {"anchor": config["anchor"], "offset_days": parse_days_from_text(field_data["value"])},
+            "source_fields": [field_name],
+            "mutual": facets.get("mutual", False)
+        }
+        return [obligation]
+
+    def derive_termination_right(self, field_name: str, field_data: Dict) -> Tuple[List[Dict], List[Dict]]:
+        action = self.TERMINATION_RIGHT_FIELDS[field_name]
+        facets = field_data.get("facets", {})
+        holder = "seller" if facets.get("favors") == "seller" else "buyer"
+        right = {
+            "id": f"right_{action}_{holder}_{stable_hash(field_data['value'])}",
+            "type": "right",
+            "holder": holder,
+            "action": action,
+            "description": summarize_value(field_data["value"]),
+            "source_fields": [field_name]
+        }
+        risks = []
+        if not facets.get("mutual"):
+            risks.append({
+                "type": "risk", "risk_type": "asymmetric_right", "severity": "medium",
+                "description": f"{field_name} favors {facets.get('favors', 'one')} party"
+            })
+        return [right], risks
+
+    def derive_financial_commitment(self, field_name: str, field_data: Dict) -> List[Dict]:
+        return [{
+            "type": "financial_commitment",
+            "amount": parse_currency(field_data["value"]),
+            "currency": extract_currency(field_data["value"]),
+            "structure": infer_payment_structure(field_name, field_data["value"])
+        }]
+
+    def derive_financial_cap(self, field_name: str, field_data: Dict) -> Tuple[List[Dict], List[Dict]]:
+        val = field_data["value"]
+        facets = field_data.get("facets", {})
+        amount = parse_currency(val)
+        if not amount:
+            return [], [{"type": "risk", "risk_type": "uncapped_liability", "severity": "critical", "description": "No financial cap found"}]
+        cap = {"type": "financial_cap", "amount": amount, "currency": extract_currency(val), "mutual": facets.get("mutual", False)}
+        return [cap], []
+
+    def derive_financial_penalty(self, field_name: str, field_data: Dict) -> List[Dict]:
+        return [{"type": "financial_penalty", "calculation": parse_penalty_calculation(field_data["value"]), "triggered_by": link_to_obligation(field_name)}]
+
+    def derive_operational_obligation(self, field_name: str, field_data: Dict) -> List[Dict]:
+        return [{"type": "obligation", "action": self.OPERATIONAL_OBLIGATION_FIELDS[field_name], "description": summarize_value(field_data["value"])}]
+
+    def derive_missing_field_risks(self, analysis: Dict) -> List[Dict]:
+        risks = []
+        for field, (risk_type, severity) in self.CRITICAL_MISSING_RISKS.items():
+            if field not in analysis or analysis[field]["value"] in ("Not Found", "null"):
+                risks.append({"type": "risk", "risk_type": risk_type, "severity": severity, "description": generate_risk_description(risk_type, {})})
+        return risks
+
     def _format_pages_for_llm(self, pages: List[PageText]) -> str:
         parts = []
         for page in pages:
@@ -1391,225 +1872,159 @@ class ContractExtractor:
 
         return pages
 
-    def _preprocess_contract(self, text: str) -> str:
-        text = re.sub(r"\s*\n\s*", "\n", text)
-        return text.strip()
+    def extract_from_pdf(self, pdf_file: Union[bytes, io.BytesIO], fields: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Deprecated: Use extract_from_file instead."""
+        return self.extract_from_file(pdf_file, extension="pdf", fields=fields)
 
     @performance_profiler
-    def extract_from_pdf(self, pdf_file: Union[bytes, io.BytesIO], tier: str = "essential", custom_fields: Optional[List[str]] = None) -> Dict[str, Any]:
+    def extract_from_file(
+        self, 
+        file_input: Union[bytes, io.BytesIO], 
+        extension: str = "pdf",
+        fields: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         """
-        Extract contract data from PDF.
+        Extract contract data from PDF or DOCX.
         
         Args:
-            pdf_file: PDF file as bytes or BytesIO
-            tier: Extraction tier - 'essential', 'professional', or 'enterprise'
-            custom_fields: Optional list of specific field names to extract (overrides tier)
-        
-        Returns:
-            Dictionary with extracted fields and metadata
+            file_input: File as bytes or BytesIO
+            extension: 'pdf' or 'docx'
+            fields: Optional list of field names to extract. Defaults to internal DEFAULT_FIELDS.
         """
         # Determine target fields
-        if custom_fields:
-            # Validate custom fields against ALL_FIELDS
-            valid_fields = set(custom_fields) & ALL_FIELDS
-            invalid_fields = set(custom_fields) - ALL_FIELDS
-            if invalid_fields:
-                logger.warning(f"Ignoring unknown custom fields: {invalid_fields}")
-            target_fields = valid_fields if valid_fields else TIER_FIELDS.get("essential", set())
-            logger.info("="*80)
-            logger.info(f"Starting PDF extraction pipeline - CUSTOM ({len(target_fields)} fields)")
-            logger.info(f"Fields: {sorted(target_fields)}")
-            logger.info("="*80)
+        if fields:
+            valid_fields = set(fields) & ALL_FIELDS
+            target_fields = valid_fields if valid_fields else DEFAULT_FIELDS
+            logger.info(f"Starting {extension.upper()} extraction pipeline - CUSTOM ({len(target_fields)} fields)")
         else:
-            # Validate tier
-            if tier not in TIER_FIELDS:
-                logger.warning(f"Invalid tier '{tier}', defaulting to 'essential'")
-                tier = "essential"
-            target_fields = TIER_FIELDS[tier]
-            logger.info("="*80)
-            logger.info(f"Starting PDF extraction pipeline - Tier: {tier.upper()} ({len(target_fields)} fields)")
-            logger.info("="*80)
+            target_fields = DEFAULT_FIELDS
+            logger.info(f"Starting {extension.upper()} extraction pipeline - DEFAULT ({len(target_fields)} fields)")
 
         doc = None
         try:
-            # 1. Open PDF
-            pdf_stream = io.BytesIO(pdf_file) if isinstance(pdf_file, bytes) else pdf_file
-            doc = fitz.open(stream=pdf_stream, filetype="pdf")
+            file_stream = io.BytesIO(file_input) if isinstance(file_input, bytes) else file_input
+            
+            if extension.lower() == "pdf":
+                doc = fitz.open(stream=file_stream, filetype="pdf")
+                if doc.is_encrypted: return {"error": "PDF is encrypted."}
+                page_texts = self._extract_text_from_pdf(doc)
+                extracted_tables = self._extract_tables(doc)
+            elif extension.lower() == "docx":
+                if not DOCX_AVAILABLE: return {"error": "python-docx not installed."}
+                doc = DocxDocument(file_stream)
+                page_texts = self._extract_text_from_docx(doc)
+                extracted_tables = self._extract_tables_from_docx(doc)
+            else:
+                return {"error": f"Unsupported extension: {extension}"}
 
-            if doc.is_encrypted:
-                return {"error": "PDF is encrypted and cannot be processed."}
+            if not any(p.text.strip() for p in page_texts):
+                return {"error": "No text content found."}
 
-            # 2. Extract Text
-            page_texts = self._extract_text_from_pdf(doc)
             page_count = len(page_texts)
-
-            if not any(page.text.strip() for page in page_texts):
-                return {"error": "Failed to extract text from PDF."}
-
-            preprocessed_pages = [
-                PageText(page_number=p.page_number, text=self._preprocess_contract(p.text))
-                for p in page_texts
-            ]
-
-            raw_text_len = sum(len(p.text) for p in preprocessed_pages)
-
-            # 2.5 Extract Tables (before LLM - adds context for financial field extraction)
-            logger.info("="*80)
-            logger.info("TABLE EXTRACTION")
-            logger.info("="*80)
-            extracted_tables = self._extract_tables(doc)
             table_context = self._format_tables_for_llm(extracted_tables)
             normalized_payments = self._normalize_payment_schedule(extracted_tables)
             
-            if extracted_tables:
-                logger.info(f"Extracted {len(extracted_tables)} tables, {len(normalized_payments)} payment entries")
-            else:
-                logger.info("No tables detected in document")
-
-            # 2.6 Smart Chunking for Long Contracts
-            use_chunking = page_count > 50
-            if use_chunking:
-                logger.info("="*80)
-                logger.info(f"SMART CHUNKING (document has {page_count} pages)")
-                logger.info("="*80)
-                chunks = self._intelligent_chunk(preprocessed_pages)
-            else:
-                chunks = None  # Use single-pass extraction
-
-            # 3. LLM Extraction with target fields
-            logger.info("="*80)
-            logger.info("PASS 1: Initial Extraction")
-            logger.info("="*80)
+            # Smart Chunking
+            chunks = self._intelligent_chunk(page_texts) if page_count > 50 else None
             
-            # Determine tier label for logging
-            tier_label = "custom" if custom_fields else tier
-            
+            # Pass 1 & 2
+            field_label = "custom" if fields else "default"
             if chunks and len(chunks) > 1:
-                # Multi-chunk extraction: extract from each chunk and merge
-                llm_results = self._extract_from_chunks(chunks, target_fields, tier_label, table_context)
+                llm_results = self._extract_from_chunks(chunks, target_fields, field_label, table_context)
             else:
-                # Single-pass extraction (original flow)
-                llm_results = self._extract_all_fields_with_llm(preprocessed_pages, target_fields, tier_label, table_context)
+                llm_results = self._extract_all_fields_with_llm(page_texts, target_fields, field_label, table_context)
 
-            # 4. Pass 2: Validate and fill gaps
-            logger.info("="*80)
-            logger.info("PASS 2: Validation & Gap-Filling")
-            logger.info("="*80)
-            validated_results = self._validate_and_fill_gaps(llm_results, preprocessed_pages, target_fields)
+            validated_results = self._validate_and_fill_gaps(llm_results, page_texts, target_fields)
 
-            # 5. Pass 3: Build Final Analysis with Grounding Check
-            logger.info("="*80)
-            logger.info("PASS 3: Grounding Check & Coordinate Mapping")
-            logger.info("="*80)
+            # Pass 3: Grounding & Honesty
             analysis: Dict[str, Dict[str, Any]] = {}
             grounded_count = 0
-            ungrounded_extractive = 0  # Only count extractive fields that failed
-            
-            # Build full text for fuzzy matching fallback
-            full_text = " ".join([p.text for p in preprocessed_pages])
+            full_text = " ".join([p.text for p in page_texts])
 
             for key in target_fields:
                 item = validated_results.get(key, {})
-                val = item.get("value")
-                quote = item.get("verbatim_source")
-                pg = item.get("page_number")
-
-                bboxes = []
-                snippet = None
-                source = ExtractionSource.SYSTEM_FALLBACK
+                val, quote, pg = item.get("value"), item.get("verbatim_source"), item.get("page_number")
+                
                 grounded = False
-                field_type = "derived" if is_derived_field(key) else "extractive"
+                snippet = None
+                bboxes = None
 
-                if val and val != "null":
-                    source = ExtractionSource.INFERENCE
-                    logger.info(f"Grounding '{key}' ({field_type}): Val='{str(val)[:50]}...' (Pg {pg})")
-
-                    # PRIORITY 1: Exact coordinate search for verbatim source
-                    if pg and quote:
+                if val and val not in ("null", "Not Found"):
+                    if extension.lower() == "pdf" and pg and quote:
                         bboxes = self._find_visual_coordinates(doc, pg, quote)
-                        if bboxes:
+                        if bboxes: 
+                            grounded = True
                             snippet = quote
-                            grounded = True
-                            grounded_count += 1
-                            logger.info(f" ✓ GROUNDED: Found exact citation in PDF")
-
-                    # PRIORITY 2: Fallback to value if quote failed
-                    if not bboxes and pg and val and isinstance(val, str):
-                        bboxes = self._find_visual_coordinates(doc, pg, val)
-                        if bboxes:
-                            snippet = val
-                            grounded = True
-                            grounded_count += 1
-                            logger.info(f" ✓ GROUNDED: Found value text in PDF")
                     
-                    # PRIORITY 3: Fuzzy matching for OCR/line-break tolerance
-                    if not grounded and quote:
-                        if fuzzy_text_exists(quote, full_text):
-                            grounded = True
-                            grounded_count += 1
-                            logger.info(f" ✓ GROUNDED (fuzzy): Text evidence found despite formatting differences")
+                    if not grounded and quote and fuzzy_text_exists(quote, full_text):
+                        grounded = True
+                        snippet = quote
                     
-                    # PRIORITY 4: For derived fields, check if ANY supporting text exists
-                    if not grounded and field_type == "derived" and val:
-                        # For derived fields, we just check if key terms from value exist
-                        if fuzzy_text_exists(str(val)[:100], full_text):
-                            grounded = True
-                            grounded_count += 1
-                            logger.info(f" ✓ GROUNDED (derived): Supporting evidence found for synthesis field")
+                    if grounded: grounded_count += 1
 
-                    if not grounded:
-                        if field_type == "extractive":
-                            ungrounded_extractive += 1
-                            logger.warning(f" ✗ UNGROUNDED: No text evidence found for '{key}'")
-                        else:
-                            # Derived fields without grounding are okay - they're synthesis
-                            logger.info(f" ○ UNGROUNDED (derived): Synthesis field without single citation - acceptable")
-                else:
-                    val = "Not Found"
-                    if field_type == "extractive":
-                        ungrounded_extractive += 1
+                # Extract facets
+                facets = {f: item[f] for f in get_applicable_facets(key) if f in item}
 
+                # Build result object
                 result_obj = ExtractionResult(
-                    value=val if isinstance(val, str) else json.dumps(val) if val else "Not Found",
-                    source=source,
+                    value=val if val is not None else "Not specified",
+                    source=ExtractionSource.LLM if val and val != "null" else ExtractionSource.SYSTEM_FALLBACK,
                     page_number=pg,
                     reference_snippet=snippet,
-                    bbox=bboxes if bboxes else None,
+                    bbox=bboxes,
                     grounded=grounded,
-                    field_type=field_type
+                    facets=facets if facets else None,
+                    confidence_score=0.98 if grounded else (0.7 if val and val != "null" else 0.0)
                 )
-
                 analysis[key] = result_obj.to_dict()
 
-            # Summary logging
-            total_fields = len(target_fields)
-            extractive_fields = sum(1 for k in target_fields if not is_derived_field(k))
-            grounding_rate = (grounded_count / total_fields * 100) if total_fields > 0 else 0
-            logger.info("="*80)
-            logger.info(f"EXTRACTION COMPLETE: {grounded_count}/{total_fields} fields grounded ({grounding_rate:.1f}%)")
-            logger.info(f"  - Extractive fields ungrounded: {ungrounded_extractive}/{extractive_fields}")
-            logger.info("="*80)
-
+            analysis = normalize_analysis_payload(analysis)
+            legal_objects = self.derive_objects(analysis)
+            
             return {
                 "extraction_timestamp": datetime.now().isoformat(),
-                "extraction_tier": tier,
-                "credits_used": TIER_CREDITS[tier],
-                "fields_extracted": len(target_fields),
-                "fields_grounded": grounded_count,
-                "grounding_rate": round(grounding_rate, 1),
-                "contract_type": "General Agreement",
-                "contract_length": raw_text_len,
-                "pages_analysed": page_count,
-                "chunks_processed": len(chunks) if chunks else 1,
-                "tables_extracted": len(extracted_tables),
-                "payment_schedule": normalized_payments if normalized_payments else [],
-                "analysis": analysis,
+                "metadata": {
+                    "document_format": extension.upper(),
+                    "document_complexity": compute_document_complexity(analysis),
+                    "grounding_rate": f"{(grounded_count / len(target_fields) * 100):.1f}%" if target_fields else "0%",
+                    "knowledge_graph": legal_objects,
+                    "pages_processed": page_count,
+                    "segments_found": len(extracted_tables),
+                    "structured_data": normalized_payments,
+                },
+                "analysis": analysis
             }
 
         except Exception as e:
-            logger.error("Unexpected error processing PDF: %s", e, exc_info=True)
-            return {"error": f"Failed to read PDF: {e}"}
-
+            logger.error(f"Extraction failed: {e}", exc_info=True)
+            return {"error": str(e)}
         finally:
-            if doc:
-                doc.close()
+            if doc and hasattr(doc, "close"): doc.close()
+
+    def cleanup(self):
+        """Clean up resources."""
+        gc.collect()
+
+# -------------------------------------------------------------------------
+# CLI Entry Point
+# -------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Standalone Contract Extractor")
+    parser.add_argument("file", help="Path to PDF or DOCX file")
+    parser.add_argument("--fields", help="Comma-separated list of custom fields to extract")
+    
+    args = parser.parse_args()
+    
+    if not os.path.exists(args.file):
+        print(f"Error: File {args.file} not found.")
+        exit(1)
+        
+    custom_fields = args.fields.split(",") if args.fields else None
+        
+    extractor = ContractExtractor()
+    with open(args.file, "rb") as f:
+        ext = os.path.splitext(args.file)[1][1:].lower()
+        result = extractor.extract_from_file(f.read(), extension=ext, fields=custom_fields)
+        print(json.dumps(result, indent=2))

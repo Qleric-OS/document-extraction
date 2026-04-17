@@ -1,124 +1,76 @@
-# Qleric Contract Extractor (Open Source)
+# Document Extractor V1
 
-> **Contract extraction engine** - extract 60+ fields from PDF contracts with Claude AI.
+![Open Source](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)
+![Format](https://img.shields.io/badge/Supports-PDF%20%7C%20DOCX-green.svg)
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+A production-grade utility for extracting structured data from PDF and DOCX documents. This engine features built-in verification, structural derivation, and multi-format support.
 
-## Disclaimer
+<p align="center">
+  <img src="extract1.png" width="30%" />
+  <img src="extract2.png" width="30%" />
+  <img src="extract3.png" width="30%" />
+</p>
 
-This repository contains a curated, handpicked subset of the full Qleric Contract Extractor solution, made available as open source to comply with licensing requirements (e.g., GPL dependencies like PyMuPDF used in the SaaS version). This open-source snapshot is provided as-is and may not reflect the latest changes in the proprietary SaaS application. For access to the complete, production-ready solution or enterprise features, please refer to the main Qleric platform.
+## 🚀 Roll Out Strategy
 
-## Features
+This tool is designed to be dropped into a production environment within 5 minutes.
 
-- **60-field extraction taxonomy** - dates, parties, financial terms, liability, IP, compliance, and more
-- **3-tier extraction** - Essential (9 fields), Professional (18 fields), Enterprise (25 fields)
-- **Custom field selection** - mix-match any fields from the 60-field bank (max 25 per extraction)
-- **Smart chunking** - handles contracts >50 pages with intelligent section boundary detection
-- **Table extraction** - payment schedules, fee tables with automatic normalization
-- **Grounding verification** - validates extracted values against source text
-
-## Installation
+### 1. Direct Python Integration (The Core Engine)
+Perfect for CLI tools, document batch processors, or internal data science pipelines.
 
 ```bash
-pip install -r requirements.txt
-cp example.env .env
-# Edit .env and add your ANTHROPIC_API_KEY
+pip install pymupdf python-docx anthropic msgspec spacy
+python -m spacy download en_core_web_sm
 ```
-
-## Security
-
-1. Copy `example.env` to `.env` and add your actual API key.
-2. **Never commit your `.env` file** — it contains sensitive credentials.
-3. Ensure `.env` is listed in your `.gitignore`.
-
-## Quick Start (Python)
 
 ```python
 from contract_extractor import ContractExtractor
 
 extractor = ContractExtractor()
-
-# Extract from PDF bytes
 with open("contract.pdf", "rb") as f:
-    result = extractor.extract_from_pdf(f.read(), tier="professional")
+    # Full analysis (Bias Detection + Verification + Knowledge Graph)
+    result = extractor.extract_from_file(f.read(), extension="pdf")
 
-print(result["analysis"])
+print(result["metadata"]["knowledge_graph"]) # Access rights and obligations directly
 ```
 
-## Custom Field Selection
-
-Pick specific fields from the 60-field bank instead of using predefined tiers:
-
-```python
-result = extractor.extract_from_pdf(
-    pdf_bytes,
-    custom_fields=[
-        "effective_date",
-        "expiration_date", 
-        "liability_cap",
-        "gdpr_obligations",
-        "termination_for_convenience"
-    ]
-)
-```
-
-## API Server (Optional)
-
-Run the included Flask API for HTTP access:
+### 2. Microservice Deployment (API Strategy)
+Deploy as a stateless extraction microservice. A `simple_api.py` is included for rapid rollout.
 
 ```bash
+# Start the API server
 python simple_api.py
 ```
 
-Send an extraction request:
-
 ```bash
-curl -X POST -F "file=@contract.pdf" -F "tier=professional" http://localhost:5000/analyze
+# Analyze from any language/environment
+curl -X POST -F "file=@legal_agreement.docx" http://localhost:5000/analyze
 ```
 
-## Extraction Tiers
+### 3. Enterprise Intelligence (The Business Layer)
+Leverage the **Knowledge Graph** and **Verification Logic** to build custom dashboards:
+- **Risk Dashboards**: Trigger alerts on "Null-Derived Risks".
+- **Visual Timelines**: Map the `obligations` array to a Gantt chart.
+- **Audit Trails**: Use the `reference_snippet` and `bbox` (coordinates) to build a clickable side-by-side audit viewer.
 
-| Tier | Fields | Use Case |
-|------|--------|----------|
-| Essential | 9 | Quick due diligence |
-| Professional | 18 | Standard review |
-| Enterprise | 25 | Full extraction |
-| Custom | 1-25 | Mix-match from 60-field bank |
+## 🧠 Core Intelligence Layers
 
-## Available Fields
+- **The Bias Detection Logic**: Identifies clause bias (Buyer/Seller favorability) using Field Facets.
+- **The Verification Logic**: Mandatory Python-level grounding verification (Hallucination Guard) for every extracted quote.
+- **The Object Derivation Engine**: Automatically converts flat keys into Rights, Obligations, and Risks.
+- **Multi-Format Structural Intelligence**: Treats DOCX headings as virtual pages for consistent downstream processing.
 
-| Category | Fields |
-|----------|--------|
-| **Core** | effective_date, expiration_date, parties |
-| **Financial** | total_contract_value, payment_terms, currency |
-| **Termination** | termination_notice_period, renewal_terms, governing_law |
-| **Liability** | liability_cap, indemnification_clauses, insurance_requirements, limitation_of_liability |
-| **Performance** | deliverables, sla_terms, performance_metrics, acceptance_criteria |
-| **IP** | ip_ownership, license_scope, usage_restrictions |
-| **Compliance** | confidentiality_period, non_compete_terms, arbitration_clause, audit_rights, data_protection |
-| **Administrative** | notice_address, amendment_process, assignment_rights, force_majeure |
-| **+ Extended** | 30+ additional fields (GDPR, termination types, risk management, commercial terms) |
+## 🛠 Setup & Security
 
-## Environment Variables
+1. **API Key**: Add your `ANTHROPIC_API_KEY` to a `.env` file.
+2. **Environment**: Recommended Python 3.9+.
+3. **Data Privacy**: Documents are processed via Anthropic's API. Ensure your use case complies with your data sovereignty requirements.
 
-```bash
-ANTHROPIC_API_KEY=your_api_key_here
+## ⚖️ License & Open Source
 
-# Optional: Custom extraction prompt
-CLAUDE_EXTRACTION_PROMPT=your_custom_prompt
-```
+This repository is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. 
 
-## License
+### Why open source?
+We provide this core engine to the community to drive the adoption of "Verified Document Intelligence." By making our grounding and derivation logic public, we aim to eliminate "Black Box" extraction in legal-tech.
 
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
-
-If you modify this code and provide it as a service, you must make your modifications available under the same license.
-
-Commercial licensing available at [qleric.com](https://qleric.com).
-
-## Credits
-
-Built with:
-- [PyMuPDF](https://pymupdf.readthedocs.io/) - PDF processing
-- [Anthropic Claude](https://anthropic.com/) - LLM extraction
-- [spaCy](https://spacy.io/) - NLP utilities
+For commercial support, high-scale managed infrastructure, or the full SaaS suite, visit [qleric.com](https://qleric.com).
