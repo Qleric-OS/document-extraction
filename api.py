@@ -4,8 +4,13 @@ from __future__ import annotations
 import logging
 import os
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # explicit: server process loads local .env, library never does
+except ImportError:
+    pass
+
 from flask import Flask, jsonify, request
-from werkzeug.utils import secure_filename
 
 from qleric import annotate, parse, query
 from qleric.packs import CONTRACT_FIELDS, INVOICE_FIELDS, PII_FIELDS, RESUME_FIELDS

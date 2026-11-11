@@ -60,12 +60,17 @@ curl -X POST -F "file=@invoice.pdf" -F "pack=invoice" http://localhost:5000/anal
     }
   },
   "meta": {"format": "PDF", "pages": 1, "grounding_rate": "4/8",
-           "cost": {"calls": 0, "cost_usd": 0.0}}
+           "cost": {"calls": 1, "prompt_tokens": 1436,
+                    "completion_tokens": 179, "cost_usd": 0.000323}}
 }
 ```
 
+Works with no keys: LLM fields return `value: null` + `note: "No API key..."`.
+Copy `example.env` → `.env` and add `API_KEY` to enable them. No hosted key, no signup.
+
 `-F "pack=resume|pii|contract"`, `-F "deep=true"` (LLM over all unmatched), `-F "annotate=true"` (highlighted PDF).
 
+> `api.py` is a dev server. For anything networked: `gunicorn api:app` behind auth + reverse proxy — it spends your LLM key per request.
 Python: `from qleric import parse, query; query(parse(data, "pdf"), INVOICE_FIELDS)`.
 
 ## How intelligence works (hybrid, BYOK)
@@ -74,7 +79,7 @@ Python: `from qleric import parse, query; query(parse(data, "pdf"), INVOICE_FIEL
 |---|---|---|
 | **Offline** (default) | none | parse, local spans, tables, highlights, MCP tools |
 | **BYOK** | `API_KEY` + `MODEL` (+ `BASE_URL`) | any OpenAI-compatible endpoint — Claude, OpenAI, Gemini, Ollama. Single pass, locally verified. |
-| **MCP** | none in our process | `python -m qleric.mcp`: `read_pages`, `find_quote`, `annotate` — your assistant reasons, our core grounds. |
+| **MCP** (experimental) | none in our process | `python -m qleric.mcp`: `read_pages`, `find_quote`, `annotate` — stdio smoke-tested, no real client yet. Your assistant reasons, our core grounds. |
 
 No hosted key, no vendor SDK. Keys never logged, `.env` gitignored.
 

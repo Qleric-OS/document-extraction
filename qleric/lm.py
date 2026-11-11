@@ -13,11 +13,6 @@ import json
 import os
 import urllib.request
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
 
 
 class LMError(RuntimeError):
