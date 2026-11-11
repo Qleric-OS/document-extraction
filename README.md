@@ -2,7 +2,7 @@
 
 Grounded document extraction. Every value ships with its **verbatim quote + page + bbox** — or it doesn't ship.
 
-![Annotated extraction output](samples/invoice_annotated.png)
+<img src="samples/invoice_annotated.png" width="600" alt="Annotated extraction output">
 *Output of `-F "annotate=true"`: every cited value highlighted. Table rows cited per-cell.*
 
 ## Why a small model
