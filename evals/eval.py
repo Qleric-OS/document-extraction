@@ -41,6 +41,8 @@ def is_money_field(name: str) -> bool:
 def match(name: str, got: str | None, exp) -> bool | None:
     if exp is None:
         return None  # no truth: skip, don't grade
+    if got is None:
+        return False
     if is_money_field(name):
         return money_digits(got) == money_digits(str(exp))
     if "date" in name:  # compare as parsed dates, not strings

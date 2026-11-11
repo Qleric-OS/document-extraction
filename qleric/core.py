@@ -72,7 +72,7 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
                                       "grounded": True, "source": "pii"}
             continue
         if strategy == "local" and f.get("section"):
-            span = local.find_section(doc.full_text, f.get("anchors", []),
+            span = local.find_section(doc.body_text, f.get("anchors", []),
                                       member=f.get("member"))
             if span:
                 value = local.normalize(f.get("normalize"), span)
@@ -95,12 +95,12 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
         scored: list[tuple[float, str, str]] = []  # (score, field, span)
         for f in pending:
             if f.get("match_first") and f.get("normalize"):
-                best = local.find_span(doc.full_text, f.get("anchors", []),
+                best = local.find_span(doc.body_text, f.get("anchors", []),
                                        pattern=f.get("normalize"), match_first=True)
                 if best:
                     scored.append((101.0, f["name"], best))
                 continue
-            for span in local.candidates(doc.full_text):
+            for span in local.candidates(doc.body_text):
                 s = local.score(span, f.get("anchors", []))
                 if s > 55.0:
                     scored.append((s, f["name"], span))
@@ -121,7 +121,7 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
     if llm_fields:  # LLM pass: single call, verify locally
         user = "FIELDS:\n" + "\n".join(f"- {f['name']}: {f.get('hint', '')}" for f in llm_fields)
         user += "\n\nDOCUMENT:\n" + "\n\n".join(
-            f"[Page {p.number}]\n{p.text}" for p in doc.pages)
+            f"[Page {p.number}]\n{p.text}" for p in doc.pages if not p.sparse)
         try:
             raw = chat(SYSTEM, user[:100_000], _schema_hint(llm_fields))
         except LMError as e:

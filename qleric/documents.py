@@ -17,6 +17,7 @@ class Table:
 class Page:
     number: int
     text: str
+    sparse: bool = False  # cover/toc page: little text, skip for spans
 
 
 @dataclass
@@ -27,7 +28,29 @@ class Document:
 
     @property
     def full_text(self) -> str:
-        return "\n\n".join(p.text for p in self.pages)
+        return "\n\n".join(p.text for p in self.pages if not p.sparse)
+
+    @property
+    def body_text(self) -> str:
+        """Body text: non-sparse pages, boilerplate lines removed."""
+        skip = _boilerplate(self)
+        out = []
+        for p in self.pages:
+            if p.sparse:
+                continue
+            out += [ln for ln in p.text.splitlines() if ln.strip() not in skip]
+        return "\n".join(out)
+
+
+def _boilerplate(doc: Document, min_pages: int = 3) -> set[str]:
+    """Lines repeated across many pages: headers, footers, watermarks."""
+    pageseen: dict[str, set[int]] = {}
+    for p in doc.pages:
+        for ln in p.text.splitlines():
+            s = ln.strip()
+            if len(s) > 4:
+                pageseen.setdefault(s, set()).add(p.number)
+    return {s for s, pg in pageseen.items() if len(pg) >= max(min_pages, len(doc.pages) // 2)}
 
 
 def _tables_from_pdf_page(page, number: int) -> list[Table]:
@@ -71,13 +94,18 @@ def parse_pdf(data: bytes) -> Document:
         if doc.is_encrypted:
             raise ValueError("PDF is encrypted.")
         pages, tables = [], []
+        raw = []
         for i, page in enumerate(doc, start=1):
             try:
                 text = page.get_text("text") or ""
             except Exception:
                 text = ""
-            pages.append(Page(number=i, text=text))
+            raw.append(text)
             tables.extend(_tables_from_pdf_page(page, i))
+        multi = len(raw) > 1
+        for i, text in enumerate(raw, start=1):
+            pages.append(Page(number=i, text=text,
+                              sparse=multi and len(text.split()) < 30))
         if not any(p.text.strip() for p in pages):
             raise ValueError("No text content found (scanned image? OCR not yet supported).")
         return Document(format="PDF", pages=pages, tables=tables)
