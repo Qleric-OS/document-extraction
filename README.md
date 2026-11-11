@@ -1,22 +1,17 @@
-# qleric — grounded extraction at $0.001/doc
+# qleric
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Format](https://img.shields.io/badge/Supports-PDF%20%7C%20DOCX-green.svg)
-
-Grounded document extraction. Every value ships with its **verbatim quote + page + bbox** — no black-box JSON.
+Grounded document extraction. Every value ships with its **verbatim quote + page + bbox** — or it doesn't ship.
 
 ![Annotated extraction output](samples/invoice_annotated.png)
-*Real output: `annotate=true` burns every cited value into the PDF. Table rows cited per-cell.*
+*Output of `-F "annotate=true"`: every cited value highlighted. Table rows cited per-cell.*
 
-## Why a small model (deliberately)
+## Why a small model
 
-The thesis: **constrain intelligence, force better machinery.** A big model papers over weak extraction with fluent guesses; a small one (gpt-6-luna) exposes every gap — which we then fix deterministically, once, for all future runs.
+Local machinery resolves everything nameable for $0; the model only sees the residue (sellers, skills, clauses). A small model exposes gaps instead of papering over them — each gap becomes a deterministic fix.
 
-- Local resolves 100% of nameable fields for $0; the model only sees the residue (sellers, skills, clauses).
-- Small-model misses are honest nulls, not hallucinations — verified by the same grounding gate.
 - Measured: gpt-6-luna seller/name/title/skills 97–100% on real CVs, all grounded, ~$0.0013/doc.
-- Weaknesses, stated plainly: inferred dates ("end of calendar year" → 12/31) need LLM judgment; multi-party/liability nuances in 200-page SEC filings exceed the small model's context discipline — `deep=true` helps, a bigger model helps more, and the ledger tells you exactly what it costs.
-- Rule: never upgrade the model to fix what an anchor can fix. The eval suite (`evals/`) fails first; machinery second; model last.
+- Limits: inferred dates ("end of calendar year" → 12/31) need judgment; 200-page SEC nuance exceeds small-model discipline. `deep=true` or a bigger model covers it; the ledger prices it exactly.
+- Rule: never upgrade the model to fix what an anchor can fix. Eval fails first, machinery second, model last.
 ## The pipeline
 
 ```mermaid
@@ -83,27 +78,27 @@ Python: `from qleric import parse, query; query(parse(data, "pdf"), INVOICE_FIEL
 
 No hosted key, no vendor SDK. Keys never logged, `.env` gitignored.
 
-## Measured cost (not marketed)
+## Cost
 
-Every LLM call is metered into `meta.cost`. Small models are the point: constrain intelligence, force better machinery.
+`meta.cost` on every response: calls, tokens in/out, USD. Keyless runs are $0 by construction (no LLM called).
 
 | run | calls | tokens in/out | cost |
 |---|---|---|---|
-| 8 CUAD contracts, gpt-6-luna | 8 | 59,703 / 2,210 | **$0.0103 (~$0.0013/doc)** |
-| 127 mixed requests, gpt-6-luna | 127 | ~50k / ~19k | **~$0.01** |
-| 90-case corpus, keyless | 0 | 0 / 0 | **$0** |
+| 8 CUAD contracts, gpt-6-luna | 8 | 59,703 / 2,210 | $0.0103 |
+| 127 mixed requests, gpt-6-luna | 127 | ~50k / ~19k | ~$0.01 |
+| 90-case corpus, keyless | 0 | 0 / 0 | $0 |
 
-## Evals: how we know it works
+## Evals
 
-Seeded synthetic corpus (`evals/generate.py`, deterministic) + private real-doc validation (your docs never leave your machine):
+Seeded synthetic corpus (`evals/generate.py`) + private real-doc validation:
 
-| suite | what | local accuracy | grounding |
-|---|---|---|---|
-| 90 synthetic (30 invoice / 30 resume / 30 PII) | mess axes: label variants, EU/US dates, case noise, junk, 2-page, overlap traps | **100%** every offline field | 0 false grounds |
-| CUAD contracts (510-clause public truth) | SEC filings: paragraph-embedded dates, `Province of` law, filing-header decoys | agreement 62%, law 38% (inferred dates correctly nulled → LLM territory) | 0 false grounds |
-| your docs (`python -m evals.validate_real`) | hand-checked truth on your own PDFs | real CVs: 100% offline | template keeps the loop honest |
+| suite | result |
+|---|---|
+| 90 synthetic (invoice / resume / PII) | 100% offline fields, 0 false grounds |
+| CUAD contracts (public clause truth) | agreement 62%, law 38%; inferred dates nulled (LLM territory) |
+| your docs (`python -m evals.validate_real`) | real CVs: 100% offline |
 
-Failure loop: every miss → new mess axis in the generator or new anchor/member pattern. The corpus grows; the machinery hardens; docs stay private.
+Misses feed back into the generator or pack anchors. No false grounds recorded to date.
 
 ## Repo map
 
