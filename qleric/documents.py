@@ -10,6 +10,7 @@ class Table:
     page_number: int
     headers: list[str] = field(default_factory=list)
     rows: list[list[str]] = field(default_factory=list)
+    cells: list[list[list[float]]] = field(default_factory=list)  # per-row cell rects
 
 
 @dataclass
@@ -43,8 +44,20 @@ def _tables_from_pdf_page(page, number: int) -> list[Table]:
                 continue
             if not data:
                 continue
+            try:  # cells is flat row-major: reshape into per-row rects
+                flat = list(t.cells)
+                ncols = len(data[0]) if data and data[0] else 0
+                if ncols and len(flat) == len(data) * ncols:
+                    flat = [flat[i:i + ncols] for i in range(0, len(flat), ncols)]
+                def _r(c):
+                    return [c.x0, c.y0, c.x1, c.y1] if hasattr(c, "x0") else list(c)
+                rects = [[_r(c) for c in row] for row in flat
+                         if isinstance(row, (list, tuple))]
+            except Exception:
+                rects = []
             out.append(Table(page_number=number, headers=[str(c or "") for c in data[0]],
-                             rows=[[str(c or "") for c in r] for r in data[1:]]))
+                             rows=[[str(c or "") for c in r] for r in data[1:]],
+                             cells=rects[1:] if rects and len(rects) > len(data[1:]) else rects))
     except Exception:
         pass
     return out

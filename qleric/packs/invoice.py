@@ -26,6 +26,6 @@ FIELDS = [
      "normalize": _MONEY},
     {"name": "seller", "strategy": "llm", "hint": "selling company name"},
     {"name": "buyer", "strategy": "llm", "hint": "buying company name"},
-    {"name": "line_items", "strategy": "llm",
-     "hint": "each line: description, quantity, unit price, amount"},
+    {"name": "line_items", "strategy": "table", "hint": "line items from item tables",
+     "columns": ["description", "qty", "quantity", "price", "amount", "total"]},
 ]

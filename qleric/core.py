@@ -14,6 +14,31 @@ SYSTEM = ("You are a precise document reader. Extract the requested fields. "
           "and page_number (1-based). If not found, value is null.")
 
 
+def _table_items(doc: Document, f: dict) -> list[dict]:
+    """Row-grounded line items: header match -> rows as items with cell bboxes."""
+    cols = [c.lower() for c in f.get("columns", [])]
+    items: list[dict] = []
+    for t in doc.tables:
+        heads = [h.lower() for h in t.headers]
+        if not heads or sum(any(c in h for h in heads) for c in cols) < 2:
+            continue  # not an item table: need 2+ column hits
+        idx = {c: next((i for i, h in enumerate(heads) if c in h), None) for c in cols}
+        for ri, row in enumerate(t.rows):
+            cells = t.cells[ri] if ri < len(t.cells) else []
+            item = {}
+            for c in cols:
+                i = idx[c]
+                if i is not None and i < len(row):
+                    item[c] = row[i].strip()
+            if not any(item.values()):
+                continue
+            verbatim = " ".join(v for v in item.values() if v)
+            boxes = [cells[i] for c in cols if (i := idx[c]) is not None and i < len(cells)]
+            items.append({**item, "verbatim": verbatim, "bboxes": boxes,
+                          "page_number": t.page_number})
+    return items
+
+
 def _schema_hint(fields: list[dict]) -> str:
     names = ", ".join(f["name"] for f in fields)
     return ('{"<field>": {"value": string|null, "verbatim": string|null, '
@@ -54,6 +79,14 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
                 hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
                 results[f["name"]] = {"value": value, "verbatim": span.strip(),
                                       **hit, "grounded": True, "source": "local"}
+            continue
+        if strategy == "table":
+            items = _table_items(doc, f)
+            if items:
+                first = grounding.locate(items[0]["verbatim"], doc.pages) or {}
+                results[f["name"]] = {"value": items, "verbatim": items[0]["verbatim"],
+                                      **first, "grounded": True, "source": "table",
+                                      "bboxes": [b for it in items for b in it["bboxes"]]}
             continue
         if strategy == "local":
             pending.append(f)
