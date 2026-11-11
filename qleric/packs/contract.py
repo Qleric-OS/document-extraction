@@ -1,9 +1,9 @@
-"""Contract pack: CUAD-aligned. Local anchors for parties/dates/law, LLM for clauses.
+"""Contract pack: CUAD-aligned. Local anchors for dates/law, LLM for clauses.
 
-Column mapping from CUAD master_clauses.csv: Parties, Agreement Date,
-Effective Date, Expiration Date, Governing Law -> local spans.
-Termination For Convenience, Renewal Term, Non-Compete, Exclusivity,
-Most Favored Nation, No-Solicit, Non-Disparagement -> llm (clause judgment).
+Column mapping from CUAD master_clauses.csv: Agreement Date, Effective Date,
+Expiration Date, Governing Law -> local spans. Termination For Convenience,
+Renewal Term, Non-Compete, Exclusivity, Most Favored Nation -> llm with
+escalate (small model first, MODEL_BIG on miss/ungrounded).
 """
 from __future__ import annotations
 
@@ -23,14 +23,14 @@ FIELDS = [
                  "construed in accordance with"],
      "normalize": r"(?:laws? of|State of|Province of|Commonwealth of)\s+(?:the\s+)?(?:State of\s+|Province of\s+|Commonwealth of\s+)?([A-Z][a-z]+(?: [A-Z][a-z]+)?)",
      "strip": ["and", "the", "of", "federal", "as"]},
-    {"name": "termination_for_convenience", "strategy": "llm",
+    {"name": "termination_for_convenience", "strategy": "llm", "escalate": True,
      "hint": "can either party terminate for convenience? quote the clause"},
-    {"name": "renewal_term", "strategy": "llm",
+    {"name": "renewal_term", "strategy": "llm", "escalate": True,
      "hint": "renewal or auto-renewal terms, quote the clause"},
-    {"name": "non_compete", "strategy": "llm",
+    {"name": "non_compete", "strategy": "llm", "escalate": True,
      "hint": "non-compete restrictions, quote the clause or null"},
-    {"name": "exclusivity", "strategy": "llm",
+    {"name": "exclusivity", "strategy": "llm", "escalate": True,
      "hint": "exclusivity obligations, quote the clause or null"},
-    {"name": "most_favored_nation", "strategy": "llm",
+    {"name": "most_favored_nation", "strategy": "llm", "escalate": True,
      "hint": "most favored nation clause, quote or null"},
 ]

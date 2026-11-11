@@ -138,35 +138,54 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
     llm_fields = [f for f in fields
                   if f["name"] not in results
                   and (deep or f.get("strategy", "llm") == "llm")]
-    if llm_fields:  # LLM pass: single call, verify locally
-        user = "FIELDS:\n" + "\n".join(f"- {f['name']}: {f.get('hint', '')}" for f in llm_fields)
-        user += "\n\nDOCUMENT:\n" + "\n\n".join(
-            f"[Page {p.number}]\n{p.text}" for p in doc.pages if not p.sparse)
-        try:
-            raw = chat(SYSTEM, user[:100_000], _schema_hint(llm_fields))
-        except LMError as e:
-            for f in llm_fields:  # keyless: report honestly instead of dropping
-                results.setdefault(f["name"], {"value": None, "grounded": False,
-                                               "source": f.get("strategy", "llm"),
-                                               "note": str(e)})
-            return finalize(doc, results, pdf_data)
-        for f in llm_fields:
-            item = raw.get(f["name"], {}) if isinstance(raw, dict) else {}
-            value, verbatim = item.get("value"), item.get("verbatim")
-            hit = grounding.locate(verbatim, doc.pages) if verbatim else None
-            if value and hit:
-                results[f["name"]] = {"value": value, "verbatim": verbatim,
-                                      **hit, "grounded": True, "source": "llm"}
-            else:
-                results[f["name"]] = {"value": value, "verbatim": verbatim,
-                                      "grounded": False, "source": "llm",
-                                      "page_number": item.get("page_number")}
+    if llm_fields:  # Small model first; escalate flagged fields that miss or unground
+        _run_lm_pass(doc, llm_fields, results, model=None)
+        big_fields = [f for f in llm_fields if f.get("escalate")
+                      and not results.get(f["name"], {}).get("grounded")]
+        if big_fields:
+            import os as _os
+            big_model = _os.getenv("MODEL_BIG", "")
+            if big_model:
+                _run_lm_pass(doc, big_fields, results, model=big_model, tier="big")
     else:  # keyless local-only: report misses honestly
         for f in fields:
             results.setdefault(f["name"], {"value": None, "grounded": False,
                                            "source": f.get("strategy", "llm"),
                                            "note": "no local match; needs LLM (deep=true or key)"})
+    for f in fields:  # backfill: every declared field appears in output
+        if f["name"] not in results:
+            results[f["name"]] = {"value": None, "grounded": False,
+                                  "source": f.get("strategy", "llm"),
+                                  "note": "no match at any tier"}
     return finalize(doc, results, pdf_data)
+
+
+def _run_lm_pass(doc: Document, llm_fields: list[dict], results: dict,
+                 model: str | None = None, tier: str = "small") -> None:
+    """Single LLM pass over fields; ground each claim locally. Mutates results."""
+    user = "FIELDS:\n" + "\n".join(f"- {f['name']}: {f.get('hint', '')}" for f in llm_fields)
+    user += "\n\nDOCUMENT:\n" + "\n\n".join(
+        f"[Page {p.number}]\n{p.text}" for p in doc.pages if not p.sparse)
+    try:
+        raw = chat(SYSTEM, user[:100_000], _schema_hint(llm_fields), model=model)
+    except LMError as e:
+        for f in llm_fields:  # keyless: report honestly instead of dropping
+            results.setdefault(f["name"], {"value": None, "grounded": False,
+                                           "source": f.get("strategy", "llm"),
+                                           "note": str(e)})
+        return
+    for f in llm_fields:
+        item = raw.get(f["name"], {}) if isinstance(raw, dict) else {}
+        value, verbatim = item.get("value"), item.get("verbatim")
+        hit = grounding.locate(verbatim, doc.pages) if verbatim else None
+        if value and hit:
+            results[f["name"]] = {"value": value, "verbatim": verbatim,
+                                  **hit, "grounded": True, "source": f"llm-{tier}"}
+        else:
+            if tier == "big" or f["name"] not in results:
+                results[f["name"]] = {"value": value, "verbatim": verbatim,
+                                      "grounded": False, "source": f"llm-{tier}",
+                                      "page_number": item.get("page_number")}
 
 
 def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:

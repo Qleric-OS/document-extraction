@@ -12,7 +12,22 @@ Local machinery resolves everything nameable for $0; the model only sees the res
 - Measured: gpt-6-luna seller/name/title/skills 97–100% on real CVs, all grounded, ~$0.0013/doc.
 - Limits: inferred dates ("end of calendar year" → 12/31) need judgment; 200-page SEC nuance exceeds small-model discipline. `deep=true` or a bigger model covers it; the ledger prices it exactly.
 - Rule: never upgrade the model to fix what an anchor can fix. Eval fails first, machinery second, model last.
-## The pipeline
+
+## Delegation: local → small → big
+
+Three tiers, cheapest first. Each tier only sees what the previous couldn't cite:
+
+```mermaid
+flowchart LR
+    L[local/table/pii: $0] -->|unmatched| S[small model: $0.001/doc]
+    S -->|miss or ungrounded + escalate| B[big model: metered]
+    B --> H[honest null]
+```
+
+- **Local** resolves everything nameable (dates, totals, sections, sweeps, rows).
+- **Small** (`MODEL`, default gpt-6-luna) takes the residue: sellers, skills, clauses. Single pass.
+- **Big** (`MODEL_BIG`, unset by default) fires only on fields flagged `"escalate": true` that come back missed or ungrounded. Contract clauses carry the flag; invoice/resume don't need it.
+- Every tier answers to the same grounding gate, and `meta.cost` itemizes each call by model.
 
 ```mermaid
 flowchart LR
