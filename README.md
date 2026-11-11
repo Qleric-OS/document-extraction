@@ -1,82 +1,48 @@
-# Document Extractor
+# qleric
 
-![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Format](https://img.shields.io/badge/Supports-PDF%20%7C%20DOCX-green.svg)
 
-A production-grade utility for extracting structured data from PDF and DOCX documents. Built-in hallucination verification, structural derivation, and multi-format support. Designed to drop into a production environment in under five minutes.
+Grounded document extraction. Every value ships with its **verbatim quote + page + bbox** — no black-box JSON.
 
-![Extraction output](extract1.png)
-
-![Analysis interface](extract2.png)
-
-![Knowledge graph](extract3.png)
-
----
-
-## Deployment options
-
-### 01 — Direct Python integration
-
-For CLI tools, document batch processors, or internal data science pipelines.
+## 30 seconds
 
 ```bash
-pip install pymupdf python-docx anthropic msgspec spacy
-python -m spacy download en_core_web_sm
+pip install -r requirements.txt
+python api.py
+curl -X POST -F "file=@invoice.pdf" -F "pack=invoice" http://localhost:5000/analyze
 ```
 
-```python
-from contract_extractor import ContractExtractor
-
-extractor = ContractExtractor()
-
-with open("contract.pdf", "rb") as f:
-    result = extractor.extract_from_file(f.read(), extension="pdf")
-
-print(result["metadata"]["knowledge_graph"])
+```json
+{
+  "fields": {
+    "total_amount": {
+      "value": "$1,240.00", "verbatim": "Total Due $1,240.00",
+      "page_number": 1, "bbox": [[x0, y0, x1, y1]],
+      "grounded": true, "source": "regex"
+    }
+  },
+  "meta": {"format": "PDF", "pages": 1, "grounding_rate": "4/8"}
+}
 ```
+## Packs (`-F "pack=<name>"`)
 
-### 02 — Microservice deployment
+| pack | local (offline) | llm (needs key) | pii sweep |
+|---|---|---|---|
+| `invoice` | number, dates, totals, tax | seller, buyer, line_items | — |
+| `resume` | email, phone, experience §, education § | name, skills, current_title | — |
+| `pii` | — | — | email, phone, ssn, credit_card, iban (all occurrences + `bboxes` per hit, redaction-ready) |
 
-Deploy as a stateless extraction microservice. A `simple_api.py` is included for rapid rollout.
+Add `-F "deep=true"` to force LLM over all unmatched fields, `-F "annotate=true"` for a base64 highlighted PDF.
 
-```bash
-python simple_api.py
-```
+Python: `from qleric import parse, query; query(parse(data, "pdf"), INVOICE_FIELDS)`.
+| **BYOK** | `API_KEY` + `MODEL` (+ `BASE_URL`) | LLM fields via any OpenAI-compatible endpoint — Anthropic, OpenAI, Gemini, Ollama |
+| **MCP** | none in our process | point your own assistant at docs: `python -m qleric.mcp` exposes `read_pages`, `find_quote`, `annotate` |
 
-```bash
-curl -X POST -F "file=@legal_agreement.docx" http://localhost:5000/analyze
-```
+No hosted key, no vendor SDK, single LLM pass with local verification.
 
-### 03 — Enterprise intelligence layer
+## Packs
 
-Use the knowledge graph and verification logic to build custom dashboards: risk dashboards triggered by null-derived risks, visual timelines mapping obligations to a Gantt chart, or clickable audit viewers using `reference_snippet` and `bbox` coordinates.
+- `invoice` — numbers, dates, totals, seller/buyer, line items, tax (regex offline + LLM fallback)
 
----
-
-## Core intelligence layers
-
-**Bias detection** — Identifies clause bias (buyer/seller favorability) using field facets.
-
-**Verification logic** — Python-level grounding verification for every extracted quote. Hallucination guard for all outputs.
-
-**Object derivation engine** — Automatically converts flat keys into rights, obligations, and risks.
-
-**Multi-format structural intelligence** — Treats DOCX headings as virtual pages for consistent downstream processing.
-
----
-
-## Setup
-
-1. Add your `ANTHROPIC_API_KEY` to a `.env` file.
-2. Python 3.9+ recommended.
-3. Documents are processed via Anthropic's API. Ensure your use case complies with your data sovereignty requirements.
-
----
-
-## License
-
-Licensed under the [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.en.html).
-
-This core engine is open source to drive adoption of verified document intelligence. Making the grounding and derivation logic public is an effort to eliminate black-box extraction in document processing.
-
-[qleric.com](https://qleric.com)
+Python: `from qleric import parse, query; query(parse(data, "pdf"), INVOICE_FIELDS)`.
