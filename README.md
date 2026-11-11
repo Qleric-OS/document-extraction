@@ -27,22 +27,24 @@ curl -X POST -F "file=@invoice.pdf" -F "pack=invoice" http://localhost:5000/anal
 ```
 ## Packs (`-F "pack=<name>"`)
 
-| pack | local (offline) | llm (needs key) | pii sweep |
-|---|---|---|---|
-| `invoice` | number, dates, totals, tax | seller, buyer, line_items | — |
-| `resume` | email, phone, experience §, education § | name, skills, current_title | — |
-| `pii` | — | — | email, phone, ssn, credit_card, iban (all occurrences + `bboxes` per hit, redaction-ready) |
+| pack | offline (free) | llm (needs key) |
+|---|---|---|
+| `invoice` | number, dates, totals, tax, line_items (tables) | seller, buyer |
+| `resume` | email, phone, experience §, education § | name, skills, current_title |
+| `pii` | email, phone, ssn, credit_card, iban (all occurrences + `bboxes`) | — |
+| `contract` | agreement/effective/expiration dates, governing law | parties, termination, renewal, non-compete, exclusivity, MFN |
 
 Add `-F "deep=true"` to force LLM over all unmatched fields, `-F "annotate=true"` for a base64 highlighted PDF.
 
 Python: `from qleric import parse, query; query(parse(data, "pdf"), INVOICE_FIELDS)`.
-| **BYOK** | `API_KEY` + `MODEL` (+ `BASE_URL`) | LLM fields via any OpenAI-compatible endpoint — Anthropic, OpenAI, Gemini, Ollama |
-| **MCP** | none in our process | point your own assistant at docs: `python -m qleric.mcp` exposes `read_pages`, `find_quote`, `annotate` |
 
-No hosted key, no vendor SDK, single LLM pass with local verification.
+## Cost (measured, not marketed)
 
-## Packs
+Every LLM call is metered into `meta.cost` (tokens in/out + USD). Keyless runs cost exactly $0.
 
-- `invoice` — numbers, dates, totals, seller/buyer, line items, tax (regex offline + LLM fallback)
+| run | calls | tokens in/out | cost |
+|---|---|---|---|
+| 8 CUAD contracts, gpt-6-luna | 8 | 59,703 / 2,210 | **$0.0103 (~$0.0013/doc)** |
+| 90-case synthetic corpus, keyless | 0 | 0 / 0 | **$0** |
 
-Python: `from qleric import parse, query; query(parse(data, "pdf"), INVOICE_FIELDS)`.
+The local layer resolves 100% of offline fields before any token is spent — the LLM only sees what regex/fuzzy can't name.

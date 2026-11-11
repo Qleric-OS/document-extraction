@@ -75,7 +75,7 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
             span = local.find_section(doc.body_text, f.get("anchors", []),
                                       member=f.get("member"))
             if span:
-                value = local.normalize(f.get("normalize"), span)
+                value = local.normalize(f.get("normalize"), span, f.get("strip"))
                 hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
                 results[f["name"]] = {"value": value, "verbatim": span.strip(),
                                       **hit, "grounded": True, "source": "local"}
@@ -102,19 +102,32 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
                 continue
             for span in local.candidates(doc.body_text):
                 s = local.score(span, f.get("anchors", []))
+                norm = f.get("normalize")
+                if norm and s > 30.0 and _re.search(norm, span, _re.IGNORECASE):
+                    s += 40.0  # anchor-proximate value: paragraph-embedded dates/law
+                if _re.match(r"\s*\d+\.\s+[A-Z][A-Z \-/&]+", span):
+                    s += 25.0  # numbered section heading in span: clause authority
+                for h in f.get("headings", []):
+                    if h.lower() in span.lower():
+                        s += 50.0  # field's own section heading present: strongest signal
+                        break
                 if s > 55.0:
                     scored.append((s, f["name"], span))
         scored.sort(reverse=True)
-        taken: set[str] = set()
+        taken: list[str] = []
+        def _overlaps(a: str, b: str) -> bool:
+            return a in b or b in a
         for _, name, span in scored:
-            if name in results or span in taken:
+            if name in results or any(_overlaps(span, t) for t in taken):
                 continue
             f = next(x for x in pending if x["name"] == name)
-            value = local.normalize(f.get("normalize"), span)
+            value = local.normalize(f.get("normalize"), span, f.get("strip"))
+            if value is None:
+                continue  # anchor matched but no value present (template/placeholder)
             hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
             results[name] = {"value": value, "verbatim": span.strip(),
                              **hit, "grounded": True, "source": "local"}
-            taken.add(span)
+            taken.append(span)
     llm_fields = [f for f in fields
                   if f["name"] not in results
                   and (deep or f.get("strategy", "llm") == "llm")]
@@ -170,6 +183,11 @@ def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:
             except Exception:
                 pass
     grounded = sum(1 for r in results.values() if r.get("grounded"))
-    return {"fields": results,
-            "meta": {"format": doc.format, "pages": len(doc.pages),
-                     "grounding_rate": f"{grounded}/{len(results)}"}}
+    meta: dict = {"format": doc.format, "pages": len(doc.pages),
+                  "grounding_rate": f"{grounded}/{len(results)}"}
+    try:
+        from . import costs as _costs
+        meta["cost"] = _costs.total()
+    except Exception:
+        pass
+    return {"fields": results, "meta": meta}

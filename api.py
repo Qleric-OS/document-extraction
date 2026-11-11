@@ -8,7 +8,7 @@ from flask import Flask, jsonify, request
 from werkzeug.utils import secure_filename
 
 from qleric import annotate, parse, query
-from qleric.packs import INVOICE_FIELDS, PII_FIELDS, RESUME_FIELDS
+from qleric.packs import CONTRACT_FIELDS, INVOICE_FIELDS, PII_FIELDS, RESUME_FIELDS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -17,7 +17,8 @@ app = Flask(__name__)
 ALLOWED = {"pdf", "docx"}
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 413 on overflow
 
-PACKS = {"invoice": INVOICE_FIELDS, "resume": RESUME_FIELDS, "pii": PII_FIELDS}
+PACKS = {"invoice": INVOICE_FIELDS, "resume": RESUME_FIELDS, "pii": PII_FIELDS,
+         "contract": CONTRACT_FIELDS}
 
 
 @app.get("/health")

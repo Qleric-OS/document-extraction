@@ -47,22 +47,28 @@ def match(name: str, got: str | None, exp) -> bool | None:
         return money_digits(got) == money_digits(str(exp))
     if "date" in name:  # compare as parsed dates, not strings
         import datetime as _dt
-        for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%m/%d/%Y", "%d/%m/%Y"):
+        fmts = ("%Y-%m-%d", "%d.%m.%Y", "%m/%d/%Y", "%d/%m/%Y",
+                "%m/%d/%y", "%d.%m.%y", "%B %d, %Y", "%b %d, %Y")
+        for fmt in fmts:
             try:
                 g = _dt.datetime.strptime(got.strip(), fmt)
                 e = _dt.datetime.strptime(str(exp).strip(), fmt)
                 return g == e
             except ValueError:
                 continue
-        try:
-            g = _dt.datetime.strptime(got.strip(), "%Y-%m-%d")
-            for fmt in ("%d.%m.%Y", "%m/%d/%Y"):
-                try:
-                    return g == _dt.datetime.strptime(str(exp).strip(), fmt)
-                except ValueError:
-                    continue
-        except ValueError:
-            pass
+        for gf in fmts:  # cross-format: parse each side independently
+            try:
+                g = _dt.datetime.strptime(got.strip(), gf)
+                break
+            except ValueError:
+                continue
+        else:
+            return norm(got) == norm(str(exp))
+        for ef in fmts:
+            try:
+                return g == _dt.datetime.strptime(str(exp).strip(), ef)
+            except ValueError:
+                continue
         return norm(got) == norm(str(exp))
     return norm(got) == norm(str(exp))
 

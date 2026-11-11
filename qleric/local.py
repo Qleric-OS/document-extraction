@@ -16,10 +16,16 @@ except ImportError:  # fallback: exact-word overlap only
 
 
 def candidates(text: str) -> list[str]:
-    """Candidate spans: each non-empty line plus 2-line windows."""
+    """Candidate spans: lines, 2-line windows, and clause windows for long lines."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     spans = list(lines)
     spans += [" ".join(lines[i:i + 2]) for i in range(len(lines) - 1)]
+    for ln in lines:
+        if len(ln) > 160:  # paragraph-embedded values: split on clause boundaries
+            for part in re.split(r";|\(|\)|, the |, and |\. ", ln):
+                part = part.strip()
+                if len(part) > 15:
+                    spans.append(part)
     return spans
 
 
@@ -108,12 +114,16 @@ def find_section(text: str, anchors: list[str], threshold: float = 55.0,
         body = keep
     return "\n".join([lines[best_idx], *body]) if body else lines[best_idx]
 
-def normalize(pattern: str | None, span: str) -> str:
-    """Clean a span: capture group if pattern matches, else the span itself."""
+def normalize(pattern: str | None, span: str, strip: list[str] | None = None) -> str | None:
+    """Clean a span: capture group if pattern matches, else None (no value found)."""
     if not pattern:
         return span.strip()
     m = re.search(pattern, span, re.IGNORECASE)
     if not m:
-        return span.strip()
+        return None
     groups = [g for g in m.groups() if g]
-    return (groups[-1] if groups else m.group(0)).strip()
+    val = (groups[-1] if groups else m.group(0)).strip()
+    if strip:
+        for w in strip:
+            val = re.sub(rf"\s+{w}\s*$", "", val, flags=re.IGNORECASE).strip()
+    return val

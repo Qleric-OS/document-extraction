@@ -43,14 +43,24 @@ class Document:
 
 
 def _boilerplate(doc: Document, min_pages: int = 3) -> set[str]:
-    """Lines repeated across many pages: headers, footers, watermarks."""
-    pageseen: dict[str, set[int]] = {}
+    """Lines repeated across the doc: headers, footers, filing stamps, watermarks."""
+    from collections import Counter
+    counts: Counter[str] = Counter()
     for p in doc.pages:
         for ln in p.text.splitlines():
             s = ln.strip()
             if len(s) > 4:
-                pageseen.setdefault(s, set()).add(p.number)
-    return {s for s, pg in pageseen.items() if len(pg) >= max(min_pages, len(doc.pages) // 2)}
+                counts[s] += 1
+    repeated = {s for s, n in counts.items() if n >= 3}
+    if len(doc.pages) >= min_pages:
+        pageseen: dict[str, set[int]] = {}
+        for p in doc.pages:
+            for ln in p.text.splitlines():
+                s = ln.strip()
+                if len(s) > 4:
+                    pageseen.setdefault(s, set()).add(p.number)
+        repeated |= {s for s, pg in pageseen.items() if len(pg) >= max(min_pages, len(doc.pages) // 2)}
+    return repeated
 
 
 def _tables_from_pdf_page(page, number: int) -> list[Table]:

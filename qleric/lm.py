@@ -99,14 +99,27 @@ def chat(system: str, user: str, schema_hint: str = '{"fields": {}}',
         headers["Authorization"] = f"Bearer {api_key}"
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers=headers, method="POST")
+    prompt_chars = len(system) + len(user) + len(schema_hint)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = json.loads(resp.read().decode())
     except Exception as e:
         raise LMError(f"LLM request failed: {e}")
+    usage = body.get("usage", {}) if isinstance(body, dict) else {}
+    pt = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+    ct = (usage.get("completion_tokens") or usage.get("output_tokens") or 0)
     try:
         text = (body["content"][0]["text"] if is_anthropic
                 else body["choices"][0]["message"]["content"])
-        return json.loads(_strip_fences(text))
+        out = json.loads(_strip_fences(text))
     except Exception as e:
         raise LMError(f"Could not parse LLM JSON: {e}")
+    try:
+        from . import costs as _costs
+        pt = pt or _costs.estimate_tokens("x" * prompt_chars)
+        ct = ct or _costs.estimate_tokens(text)
+        _costs.record(resolved, prompt_chars, len(text), pt, ct,
+                      _costs.price(resolved, pt, ct))
+    except Exception:
+        pass
+    return out
