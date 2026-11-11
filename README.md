@@ -3,8 +3,20 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Format](https://img.shields.io/badge/Supports-PDF%20%7C%20DOCX-green.svg)
 
-Every extracted value ships with its **verbatim quote + page + bbox**, or it doesn't ship. The research bet: a small model + ruthless local machinery beats a big model + hope — at 1/100th the cost.
+Grounded document extraction. Every value ships with its **verbatim quote + page + bbox** — no black-box JSON.
 
+![Annotated extraction output](samples/invoice_annotated.png)
+*Real output: `annotate=true` burns every cited value into the PDF. Table rows cited per-cell.*
+
+## Why a small model (deliberately)
+
+The thesis: **constrain intelligence, force better machinery.** A big model papers over weak extraction with fluent guesses; a small one (gpt-6-luna) exposes every gap — which we then fix deterministically, once, for all future runs.
+
+- Local resolves 100% of nameable fields for $0; the model only sees the residue (sellers, skills, clauses).
+- Small-model misses are honest nulls, not hallucinations — verified by the same grounding gate.
+- Measured: gpt-6-luna seller/name/title/skills 97–100% on real CVs, all grounded, ~$0.0013/doc.
+- Weaknesses, stated plainly: inferred dates ("end of calendar year" → 12/31) need LLM judgment; multi-party/liability nuances in 200-page SEC filings exceed the small model's context discipline — `deep=true` helps, a bigger model helps more, and the ledger tells you exactly what it costs.
+- Rule: never upgrade the model to fix what an anchor can fix. The eval suite (`evals/`) fails first; machinery second; model last.
 ## The pipeline
 
 ```mermaid

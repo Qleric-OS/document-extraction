@@ -54,9 +54,16 @@ def analyze():
         logger.exception("query failed")
         return jsonify({"error": "Extraction failed."}), 500
     if request.form.get("annotate") == "true" and ext == "pdf":
-        hits = [{"page_number": r["page_number"], "quote": r["verbatim"]}
-                for r in result["fields"].values()
-                if r.get("grounded") and r.get("page_number") and r.get("verbatim")]
+        hits = []
+        for r in result["fields"].values():
+            if not (r.get("grounded") and r.get("page_number")):
+                continue
+            if isinstance(r.get("value"), list):  # table items: cite every row
+                for it in r["value"]:
+                    hits.append({"page_number": it.get("page_number", r["page_number"]),
+                                 "quote": it["verbatim"]})
+            elif r.get("verbatim"):
+                hits.append({"page_number": r["page_number"], "quote": r["verbatim"]})
         result["annotated_pdf_base64"] = __import__("base64").b64encode(annotate(data, hits)).decode()
     return jsonify(result)
 
