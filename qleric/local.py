@@ -52,21 +52,25 @@ def _score(span: str, anchors: list[str]) -> float:
 
 
 def find_span(text: str, anchors: list[str], threshold: float = 55.0,
-              pattern: str | None = None, match_first: bool = False) -> str | None:
+              pattern: str | None = None, match_first: bool = False,
+              reject: str | None = None) -> str | None:
     """Best candidate span matching any anchor, or None.
 
     match_first: accept a direct pattern hit even without an anchor. Only for
     self-identifying patterns (email/phone); generic shapes (dates, money, ids)
-    match everywhere and must go through anchors.
+    match everywhere and must go through anchors. reject skips known traps
+    (year ranges matching the phone pattern).
     """
+    def _ok(s: str) -> bool:
+        return not (reject and re.search(reject, s, re.IGNORECASE))
     if pattern and match_first:
         anchored = [s for s in candidates(text)
                     if re.search(pattern, s, re.IGNORECASE)
-                    and _score(s, anchors) > 30.0]
+                    and _score(s, anchors) > 30.0 and _ok(s)]
         if anchored:
             return max(anchored, key=lambda s: _score(s, anchors))
         for s in candidates(text):  # bare value fallback (no label at all)
-            if re.search(pattern, s, re.IGNORECASE):
+            if re.search(pattern, s, re.IGNORECASE) and _ok(s):
                 return s
     best, best_score = None, threshold
     for span in candidates(text):

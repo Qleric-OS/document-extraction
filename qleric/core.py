@@ -96,9 +96,13 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
         for f in pending:
             if f.get("match_first") and f.get("normalize"):
                 best = local.find_span(doc.body_text, f.get("anchors", []),
-                                       pattern=f.get("normalize"), match_first=True)
+                                       pattern=f.get("normalize"), match_first=True,
+                                       reject=f.get("reject"))
                 if best:
-                    scored.append((101.0, f["name"], best))
+                    v0 = local.normalize(f.get("normalize"), best, f.get("strip"))
+                    rej = f.get("reject")
+                    if v0 is not None and not (rej and _re.search(rej, v0, _re.IGNORECASE)):
+                        scored.append((101.0, f["name"], best))
                 continue
             for span in local.candidates(doc.body_text):
                 s = local.score(span, f.get("anchors", []))
@@ -114,20 +118,23 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
                 if s > 55.0:
                     scored.append((s, f["name"], span))
         scored.sort(reverse=True)
-        taken: list[str] = []
-        def _overlaps(a: str, b: str) -> bool:
-            return a in b or b in a
+        claimed_values: set[str] = set()
         for _, name, span in scored:
-            if name in results or any(_overlaps(span, t) for t in taken):
+            if name in results:
                 continue
             f = next(x for x in pending if x["name"] == name)
             value = local.normalize(f.get("normalize"), span, f.get("strip"))
             if value is None:
                 continue  # anchor matched but no value present (template/placeholder)
+            rej = f.get("reject")
+            if rej and _re.search(rej, value, _re.IGNORECASE):
+                continue  # known trap shape (year range as phone): skip span
+            if value in claimed_values:
+                continue  # same value already claimed by a higher scorer
             hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
             results[name] = {"value": value, "verbatim": span.strip(),
                              **hit, "grounded": True, "source": "local"}
-            taken.append(span)
+            claimed_values.add(value)
     llm_fields = [f for f in fields
                   if f["name"] not in results
                   and (deep or f.get("strategy", "llm") == "llm")]

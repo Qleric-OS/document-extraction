@@ -113,9 +113,12 @@ def parse_pdf(data: bytes) -> Document:
             raw.append(text)
             tables.extend(_tables_from_pdf_page(page, i))
         multi = len(raw) > 1
+        total_words = sum(len(t.split()) for t in raw)
         for i, text in enumerate(raw, start=1):
+            n = len(text.split())
+            # sparse only if tiny AND a small fraction (covers/maps, not short docs)
             pages.append(Page(number=i, text=text,
-                              sparse=multi and len(text.split()) < 30))
+                              sparse=multi and n < 30 and n < total_words * 0.1))
         if not any(p.text.strip() for p in pages):
             raise ValueError("No text content found (scanned image? OCR not yet supported).")
         return Document(format="PDF", pages=pages, tables=tables)
