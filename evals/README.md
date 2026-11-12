@@ -15,9 +15,16 @@ case noise, junk injection, shuffled lines (10%).
 **PII** (`pii_000-029`): 1-3 emails, always phone, 80% SSN, 70% card, 60% IBAN,
 order-id decoy (must NOT match card), 30% two-page.
 
-## Metrics
-
-- **acc** value match (money digits-only, dates parsed, PII set-match, sections body-line recall)
-- **grd** grounded hits / hits (verbatim + bbox attached)
-- **fg** false grounds (grounded but verbatim absent from source) — must stay 0
 - null-truth and correctly-absent fields are skipped, not graded
+
+## Retrieval workbench
+
+`retrieve` keywords decide what the model sees. Tune them visually:
+
+```bash
+python3 evals/retrieve.py <doc> <pack> <field>   # ranked windows + stats
+```
+
+Every response carries `meta.retrieval`: windows hit/sent per field, chars,
+fallback flag. CUAD clause truth mixes Yes/No flags (absent = null correct,
+cite = hallucination) and free text (expect grounded cite).

@@ -22,6 +22,13 @@ LOCAL_MAP = [
     ("expiration_date", "Expiration Date-Answer"),
     ("governing_law", "Governing Law-Answer"),
 ]
+CLAUSE_MAP = [  # CUAD answer cols are long clause text: grade grounded-cited, not exact
+    ("termination_for_convenience", "Termination For Convenience-Answer"),
+    ("renewal_term", "Renewal Term-Answer"),
+    ("non_compete", "Non-Compete-Answer"),
+    ("exclusivity", "Exclusivity-Answer"),
+    ("most_favored_nation", "Most Favored Nation-Answer"),
+]
 
 
 def main(limit: int = 10, deep: bool = False) -> None:
@@ -52,6 +59,29 @@ def main(limit: int = 10, deep: bool = False) -> None:
                 d["hit"] += 1
             else:
                 print(f"  MISS {ours}: got={str(got)[:60]!r} exp={exp[:60]!r}")
+        for ours, theirs in CLAUSE_MAP:
+            exp = (r.get(theirs) or "").strip()
+            if not exp:
+                continue
+            got = res["fields"].get(ours) or {}
+            d = stats.setdefault("clause." + ours, {"hit": 0, "total": 0})
+            d["total"] += 1
+            if exp.lower() == "no":  # absent: null correct, cite = hallucination
+                if not got.get("value"):
+                    d["hit"] += 1
+                else:
+                    print(f"  CLAUSE-FP {ours}: val={str(got.get('value'))[:50]!r} (truth: absent)")
+            elif exp.lower() == "yes":  # present: expect grounded cite
+                if got.get("grounded") and got.get("value"):
+                    d["hit"] += 1
+                else:
+                    print(f"  CLAUSE-MISS {ours}: grounded={got.get('grounded')} (truth: present)")
+            else:  # free text (renewal): expect grounded cite
+                if got.get("grounded") and got.get("value"):
+                    d["hit"] += 1
+                else:
+                    print(f"  CLAUSE-MISS {ours}: grounded={got.get('grounded')} "
+                          f"val={str(got.get('value'))[:50]!r} (truth has clause)")
     for k, d in stats.items():
         print(f"{k}: {d['hit']}/{d['total']} = {d['hit']/max(d['total'],1):.2f}")
     try:

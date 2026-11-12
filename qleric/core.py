@@ -160,16 +160,22 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
     return finalize(doc, results, pdf_data)
 
 
+_LAST_RETRIEVAL: dict = {}  # per-query retrieval stats, surfaced in meta.retrieval
+
+
 def _targeted_context(doc: Document, llm_fields: list[dict], budget: int = 12000) -> str:
     """Clause-targeted retrieval: keyword windows per field, not the full dump.
 
     Each llm field declares retrieval keywords (default: hint words). Top
     windows go in; the full document is fallback when nothing scores.
+    Stats land in _LAST_RETRIEVAL for meta + eval.
     """
     import re as _re
-    windows: list[tuple[float, str]] = []
+    windows: list[tuple[float, str, str]] = []  # (score, field, text)
+    per_field: dict[str, dict] = {}
     for f in llm_fields:
         keys = f.get("retrieve") or [w for w in re_words(f.get("hint", "")) if len(w) > 3]
+        hits = 0
         for page in doc.pages:
             if page.sparse:
                 continue
@@ -177,14 +183,22 @@ def _targeted_context(doc: Document, llm_fields: list[dict], budget: int = 12000
                                   page.text, _re.IGNORECASE | _re.DOTALL):
                 seg = " ".join(m.group(0).split())
                 score = sum(k.lower() in seg.lower() for k in keys)
-                windows.append((score, f"[Page {page.number}] {seg}"))
+                windows.append((score, f["name"], f"[Page {page.number}] {seg}"))
+                hits += 1
+        per_field[f["name"]] = {"keys": len(keys), "windows": hits}
     windows.sort(reverse=True)
-    out, total = [], 0
-    for _, w in windows:
+    out, total, used = [], 0, {}
+    for score, name, w in windows:
         if total + len(w) > budget:
             break
         out.append(w)
         total += len(w)
+        used[name] = used.get(name, 0) + 1
+    for name, st in per_field.items():
+        st["sent"] = used.get(name, 0)
+    _LAST_RETRIEVAL.clear()
+    _LAST_RETRIEVAL.update({"budget": budget, "chars": total,
+                            "fallback": not bool(out), "fields": per_field})
     if not out:  # nothing scored: full doc fallback (capped)
         out = [f"[Page {p.number}]\n{p.text}" for p in doc.pages if not p.sparse]
         return "\n\n".join(out)[:100_000]
@@ -252,4 +266,6 @@ def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:
         meta["cost"] = _costs.total()
     except Exception:
         pass
+    if _LAST_RETRIEVAL:
+        meta["retrieval"] = dict(_LAST_RETRIEVAL)
     return {"fields": results, "meta": meta}
