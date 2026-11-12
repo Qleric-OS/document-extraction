@@ -47,6 +47,8 @@ def total() -> dict:
 PRICES = {
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-6-luna": (0.10, 0.50),
+    "gpt-6-sol": (2.00, 10.00),
+    "gpt-6-astra": (10.00, 50.00),
     "gpt-4o": (2.50, 10.00),
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-haiku-4-5": (1.00, 5.00),
