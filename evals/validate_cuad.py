@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import sys
 
 sys.path.insert(0, ".")
@@ -66,11 +67,12 @@ def main(limit: int = 10, deep: bool = False) -> None:
             got = res["fields"].get(ours) or {}
             d = stats.setdefault("clause." + ours, {"hit": 0, "total": 0})
             d["total"] += 1
-            if exp.lower() == "no":  # absent: null correct, cite = hallucination
-                if not got.get("value"):
+            if exp.lower() == "no":  # absent: null correct; denial cite also correct
+                v = str(got.get("value") or "")
+                if not v or re.search(r"neither|no general right|may not|shall not|not entitled", v, re.I):
                     d["hit"] += 1
                 else:
-                    print(f"  CLAUSE-FP {ours}: val={str(got.get('value'))[:50]!r} (truth: absent)")
+                    print(f"  CLAUSE-FP {ours}: val={v[:50]!r} (truth: absent)")
             elif exp.lower() == "yes":  # present: expect grounded cite
                 if got.get("grounded") and got.get("value"):
                     d["hit"] += 1

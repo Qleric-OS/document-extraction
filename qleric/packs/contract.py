@@ -24,7 +24,7 @@ FIELDS = [
      "normalize": r"(?:laws? of|State of|Province of|Commonwealth of)\s+(?:the\s+)?(?:State of\s+|Province of\s+|Commonwealth of\s+)?([A-Z][a-z]+(?: [A-Z][a-z]+)?)",
      "strip": ["and", "the", "of", "federal", "as"]},
     {"name": "termination_for_convenience", "strategy": "llm", "escalate": True,
-     "hint": "can either party terminate for convenience? quote the clause",
+     "hint": "termination FOR CONVENIENCE or WITHOUT CAUSE only (either party ends for any reason on notice). NOT breach, insolvency, or expiry termination. Quote the clause or null.",
      "retrieve": ["terminat", "convenience", "without cause", "30 days", "written notice"]},
     {"name": "renewal_term", "strategy": "llm", "escalate": True,
      "hint": "renewal or auto-renewal terms, quote the clause",

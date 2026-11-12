@@ -8,12 +8,8 @@ Run with LLM: `OPENAI_API_KEY=... MODEL=gpt-6-luna python3 evals/eval.py samples
 
 **Invoice** (`inv_000-029`): label variants (INV/Ref/Bill No), US/EU/ISO dates,
 4 currency formats, upper/lowercase, junk lines, 20% missing due_date, 25%
-missing tax, 15% two-page, buyer/seller company rotation.
-**Resume** (`res_000-029`): section-heading variants (Experience/Work History/
-Career, Education/Qualifications/Degrees), 70% skills section, order swaps,
-case noise, junk injection, shuffled lines (10%).
-**PII** (`pii_000-029`): 1-3 emails, always phone, 80% SSN, 70% card, 60% IBAN,
-order-id decoy (must NOT match card), 30% two-page.
+missing tax, 15% two-page, buyer/seller company rotation, filing-header
+decoys (dates that must NOT match), paragraph-embedded values.
 
 - null-truth and correctly-absent fields are skipped, not graded
 

@@ -112,11 +112,15 @@ Seeded synthetic corpus (`evals/generate.py`) + private real-doc validation:
 
 | suite | result |
 |---|---|
-| 90 synthetic (invoice / resume / PII) | 100% offline fields, 0 false grounds |
-| CUAD contracts (public clause truth) | agreement 62%, law 38%; inferred dates nulled (LLM territory) |
+| 90 synthetic (invoice / resume / PII) | 100% offline fields, 0 false grounds. Axes: label variants, EU/US dates, case noise, junk, 2-page, overlap traps, **filing-header decoys, paragraph-embedded values** |
+| CUAD contracts (public clause truth) | agreement 62%, renewal 80%, exclusivity 100%, MFN 88%; inferred dates nulled. Yes/No flags grade correct nulls as hits |
 | your docs (`python -m evals.validate_real`) | real CVs: 100% offline |
 
 Misses feed back into the generator or pack anchors. No false grounds recorded to date.
+
+## Retrieval is the product
+
+`meta.retrieval` on every response: windows hit/sent per field, chars, fallback flag. Tune with `python3 evals/retrieve.py <doc> <pack> <field>` — ranked windows, visual iteration on `retrieve` keywords. Small model + dense context beats big model + dump (13× cost, 0 closes — see Cost).
 
 ## Repo map
 
