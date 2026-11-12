@@ -160,12 +160,48 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
     return finalize(doc, results, pdf_data)
 
 
+def _targeted_context(doc: Document, llm_fields: list[dict], budget: int = 12000) -> str:
+    """Clause-targeted retrieval: keyword windows per field, not the full dump.
+
+    Each llm field declares retrieval keywords (default: hint words). Top
+    windows go in; the full document is fallback when nothing scores.
+    """
+    import re as _re
+    windows: list[tuple[float, str]] = []
+    for f in llm_fields:
+        keys = f.get("retrieve") or [w for w in re_words(f.get("hint", "")) if len(w) > 3]
+        for page in doc.pages:
+            if page.sparse:
+                continue
+            for m in _re.finditer(r".{0,600}(?:" + "|".join(map(_re.escape, keys)) + r").{0,600}",
+                                  page.text, _re.IGNORECASE | _re.DOTALL):
+                seg = " ".join(m.group(0).split())
+                score = sum(k.lower() in seg.lower() for k in keys)
+                windows.append((score, f"[Page {page.number}] {seg}"))
+    windows.sort(reverse=True)
+    out, total = [], 0
+    for _, w in windows:
+        if total + len(w) > budget:
+            break
+        out.append(w)
+        total += len(w)
+    if not out:  # nothing scored: full doc fallback (capped)
+        out = [f"[Page {p.number}]\n{p.text}" for p in doc.pages if not p.sparse]
+        return "\n\n".join(out)[:100_000]
+    return "\n\n---\n\n".join(out)
+
+
+def re_words(s: str) -> list[str]:
+    import re as _re
+    return _re.findall(r"[A-Za-z]{4,}", s)
+
+
 def _run_lm_pass(doc: Document, llm_fields: list[dict], results: dict,
                  model: str | None = None, tier: str = "small") -> None:
     """Single LLM pass over fields; ground each claim locally. Mutates results."""
+    context = _targeted_context(doc, llm_fields)
     user = "FIELDS:\n" + "\n".join(f"- {f['name']}: {f.get('hint', '')}" for f in llm_fields)
-    user += "\n\nDOCUMENT:\n" + "\n\n".join(
-        f"[Page {p.number}]\n{p.text}" for p in doc.pages if not p.sparse)
+    user += "\n\nDOCUMENT:\n" + context
     try:
         raw = chat(SYSTEM, user[:100_000], _schema_hint(llm_fields), model=model)
     except LMError as e:
