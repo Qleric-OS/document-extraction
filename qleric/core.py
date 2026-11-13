@@ -72,8 +72,12 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
                                       "grounded": True, "source": "pii"}
             continue
         if strategy == "local" and f.get("section"):
+            stops = [x for x in fields if x.get("section")] or None
             span = local.find_section(doc.body_text, f.get("anchors", []),
-                                      member=f.get("member"))
+                                      member=f.get("member"), heading=f.get("heading"),
+                                      exclude=f.get("exclude"), stop_fields=stops,
+                                      qualify=f.get("qualify"),
+                                      reassemble=f.get("reassemble", True))
             if span:
                 value = local.normalize(f.get("normalize"), span, f.get("strip"))
                 hit = grounding.locate(span.splitlines()[0], doc.pages) or {}

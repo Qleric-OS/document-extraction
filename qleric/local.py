@@ -81,42 +81,81 @@ def find_span(text: str, anchors: list[str], threshold: float = 55.0,
 
 def find_section(text: str, anchors: list[str], threshold: float = 55.0,
                  stop_anchors: list[str] | None = None,
-                 member: str | None = None) -> str | None:
+                 member: str | None = None,
+                 heading: str | None = None,
+                 exclude: str | None = None,
+                 stop_fields: list[dict] | None = None,
+                 qualify: str | None = None,
+                 reassemble: bool = True) -> str | None:
     """Section body: heading + contiguous lines until a rival heading,
     plus doc-wide reassembly of member-pattern lines (shuffle-proof).
 
-    Stops only on lines that look like a *different* section heading, not on
-    junk or short lines. member collects scattered body lines (job entries,
-    degree lines) wherever shuffle put them.
+    heading: regex a line must match to START a section (numbered/article/
+    lettered shapes). Without it, any high anchor score starts.
+    exclude: regex disqualifying false friends (e.g. 'Termination Agreement'
+    as a document title, not a section).
+    stop_fields: pack fields whose anchors form the rival-heading set.
+    member collects scattered body lines wherever shuffle put them.
+    qualify: regex the assembled value must contain, else None (wrong section).
     """
-    from .packs import RESUME_FIELDS  # lazy: avoids import cycle at module load
     if stop_anchors is None:
-        stop_anchors = [a for f in RESUME_FIELDS if f.get("section")
+        if stop_fields is None:
+            from .packs import RESUME_FIELDS  # legacy default
+            stop_fields = RESUME_FIELDS
+        stop_anchors = [a for f in stop_fields if f.get("section")
                         for a in f.get("anchors", [])]
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    best_idx, best_score = None, threshold
-    for i, ln in enumerate(lines):
+    starts: list[tuple[int, str]] = [(i, ln) for i, ln in enumerate(lines)]
+    for i, ln in enumerate(lines):  # paragraph-embedded headings: clause windows can start
+        if len(ln) > 160:
+            for part in re.split(r";|\(|\)|, the |, and |(?<!\d)\. ", ln):
+                part = part.strip()
+                if len(part) > 15:
+                    starts.append((i, part))  # origin line index preserves doc order
+    cands: list[tuple[tuple[int, float], int, str]] = []
+    for pos, (origin, ln) in enumerate(starts):
+        if exclude and re.search(exclude, ln, re.IGNORECASE):
+            continue  # false friend: never a section start
+        if heading and not re.search(heading, ln):
+            continue  # unheaded span: not a section start (body handled by member)
         s = _score(ln, anchors)
-        if s > best_score:
-            best_idx, best_score = i, s
-    if best_idx is None:
-        return None
-    body = []
-    for ln in lines[best_idx + 1:]:
-        if _score(ln, stop_anchors) > 60.0 and _score(ln, anchors) <= _score(ln, stop_anchors):
-            break  # a different section starts
-        body.append(ln)
-    if member:  # reassemble scattered members doc-wide, drop non-member junk
-        keep = [ln for ln in body if re.search(member, ln, re.IGNORECASE)]
-        seen = set(keep)
-        for ln in lines:
-            if ln not in seen and re.search(member, ln, re.IGNORECASE):
-                keep.append(ln)
-                seen.add(ln)
-        order = {ln: i for i, ln in enumerate(lines)}  # restore document order
-        keep.sort(key=lambda ln: order.get(ln, 0))
-        body = keep
-    return "\n".join([lines[best_idx], *body]) if body else lines[best_idx]
+        if s <= threshold:
+            continue
+        density = 0
+        if member:
+            own = [t for o, t in starts[pos:pos + 4] if o == origin]
+            density = len(re.findall(member, " ".join(own), re.IGNORECASE))
+        cands.append(((density, s), origin, ln))
+    cands.sort(reverse=True)  # densest, highest-scoring first
+    for _, origin, span in cands:
+        body = []
+        best_pos = next((p for p, (o, t) in enumerate(starts) if o == origin and t == span), -1)
+        for o2, t2 in starts[best_pos + 1:]:
+            if o2 != origin:
+                break
+            body.append(t2)
+        for i, ln in enumerate(lines):
+            if i <= origin:
+                continue  # heading line itself; body follows (or window covers it)
+            if _score(ln, stop_anchors) > 60.0 and _score(ln, anchors) <= _score(ln, stop_anchors):
+                break  # a different section starts
+            body.append(ln)
+        if member:
+            # filter contiguous body to member lines (keeps section identity)
+            body = [ln for ln in body if re.search(member, ln, re.IGNORECASE)]
+            if reassemble:  # shuffled docs: pull scattered members doc-wide
+                seen = set(body)
+                for ln in lines:
+                    if ln not in seen and re.search(member, ln, re.IGNORECASE):
+                        body.append(ln)
+                        seen.add(ln)
+                order = {ln: i for i, ln in enumerate(lines)}
+                body.sort(key=lambda ln: order.get(ln, 0))
+        val = "\n".join([span, *body]) if body else span
+        if qualify and not re.search(qualify, val, re.IGNORECASE):
+            continue  # right shape, wrong substance: try next heading
+        return val
+    return None
 
 def normalize(pattern: str | None, span: str, strip: list[str] | None = None) -> str | None:
     """Clean a span: capture group if pattern matches, else None (no value found)."""
