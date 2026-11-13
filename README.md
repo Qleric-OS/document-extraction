@@ -102,9 +102,9 @@ No hosted key, no vendor SDK. Keys never logged, `.env` gitignored.
 | 8 CUAD contracts, gpt-6-luna | 8 | 59,703 / 2,210 | $0.0103 |
 | 127 mixed requests, gpt-6-luna | 127 | ~50k / ~19k | ~$0.01 |
 | 90-case corpus, keyless | 0 | 0 / 0 | $0 |
-| 5 CUAD escalation (luna → sol) | 10 | 69,709 / 7,195 | $0.0851 — 13× small-only, 0 additional closes |
-
-The escalation row is the point: a bigger model on the same context closes nothing. Next work is retrieval, not reasoning — see below.
+| 5 CUAD escalation, sparse context (luna → sol) | 10 | 69,709 / 7,195 | $0.0851 — 0 additional closes |
+| 8 CUAD escalation, dense retrieval (luna → sol) | 16 | 37,854 / 7,566 | $0.0634 — termination 62→88%, non-compete →100% |
+The two escalation rows are the thesis in numbers: a big model on a raw dump closes nothing ($0.085, 0 closes); the same model on dense retrieval converts ($0.063, termination +26pp, non-compete 100%). Retrieval, not reasoning.
 
 ## Evals
 
