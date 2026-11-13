@@ -111,8 +111,12 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
             for span in local.candidates(doc.body_text):
                 s = local.score(span, f.get("anchors", []))
                 norm = f.get("normalize")
-                if norm and s > 30.0 and _re.search(norm, span, _re.IGNORECASE):
-                    s += 40.0  # anchor-proximate value: paragraph-embedded dates/law
+                if norm and _re.search(norm, span, _re.IGNORECASE):
+                    if f.get("value_first"):
+                        # distinctive shape admits the span; anchors decide rank
+                        s = max(s, 41.0) + 15.0
+                    elif s > 30.0:
+                        s += 40.0  # anchor-proximate value: paragraph-embedded dates/law
                 if _re.match(r"\s*\d+\.\s+[A-Z][A-Z \-/&]+", span):
                     s += 25.0  # numbered section heading in span: clause authority
                 for h in f.get("headings", []):
