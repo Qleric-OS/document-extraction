@@ -16,10 +16,6 @@ Single: New York(97) California(55) Delaware(40) Texas(28) Florida(17) Pennsylva
 Multi-word (34 forms): England and Wales, Hong Kong, District of Columbia,
 British Columbia, People's Republic of China, Province of Ontario, ...
 
-## Grammar rules derived
-
-1. Longest-prefix-first: `Republic of X` / `Federal Republic of X` tried before bare patterns
-2. `District`/`Republic` are answers, never prefixes
-3. Capture 1-4 words, then trim against stoplist + multi-word allowlist
-4. Bare form: `governed by X law` (no "laws of")
-See `qleric/packs/contract.py` governing_law normalize.
+- recruited: backward anaphora resolution (`resolve_reference`) for
+  "laws thereof" clauses — cite the span, value from the antecedent,
+  flagged `resolved_reference: true`. Generic core primitive, not law-specific.

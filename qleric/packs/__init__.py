@@ -28,7 +28,7 @@ Field spec — every key a pack field may declare:
 | headings | any | +50 score bonus when present in span (strongest signal) |
 | couple | local | verb+value adjacency patterns; tight coupling boosts rank |
 | demote | local | decoy-context patterns (incorporation/address); penalize span |
-
+| resolve | local | {triggers, patterns}: backward anaphora ("laws thereof" → antecedent) |
 Source enum in output: local, table, pii, llm-small, llm-big.
 """
 from .contract import FIELDS as CONTRACT_FIELDS

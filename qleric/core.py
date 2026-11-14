@@ -132,6 +132,10 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
                     s = max(s, TUNE["value_first_floor"]) + TUNE["value_first_bonus"]
                 elif s > TUNE["proximity_floor"]:
                     s += TUNE["proximity_boost"]  # anchor-proximate value
+            trig = (f.get("resolve") or {}).get("triggers", [])
+            if trig and any(_re.search(t, span, _re.IGNORECASE) for t in trig):
+                # pronominal reference: admit for backward resolution
+                s = max(s, TUNE["span_threshold"] + 1.0)
             if _re.match(r"\s*\d+\.\s+[A-Z][A-Z \-/&]+", span):
                 s += TUNE["heading_bonus"]  # numbered section heading in span
             for h in f.get("headings", []):
@@ -154,8 +158,21 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
         if name in results:
             continue
         f = next(x for x in pending if x["name"] == name)
-        value = local.normalize(f.get("normalize"), span, f.get("strip"),
-                                                        alternates=f.get("normalize_alt"), clean=f.get("clean"))
+        value = local.normalize(f.get("normalize"), span,
+                                f.get("strip"),
+                                alternates=f.get("normalize_alt"),
+                                clean=f.get("clean"))
+        if value is None and f.get("resolve"):
+            # pronominal reference ("laws thereof"): search backward from
+            # the span for the field's own pattern; cite both spans.
+            value = local.resolve_reference(doc.body_text, span, f)
+            if value is not None:
+                hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
+                results[name] = {"value": value, "verbatim": span.strip(),
+                                 **hit, "grounded": True, "source": "local",
+                                 "resolved_reference": True}
+                claimed_values.add(value)
+            continue
         if value is None:
             continue  # anchor matched but no value present (template/placeholder)
         rej = f.get("reject")
