@@ -121,42 +121,15 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
                                                         alternates=f.get("normalize_alt"), clean=f.get("clean"))
                 rej = f.get("reject")
                 if v0 is not None and not (rej and _re.search(rej, v0, _re.IGNORECASE)):
-                    scored.append((TUNE["match_first_score"], f["name"], best))
+                    scored.append((TUNE["match_first_score"], f["name"], best, {"match_first"}))
             continue
         for span in local.candidates(doc.body_text):
-            s = local.score(span, f.get("anchors", []))
-            norm = f.get("normalize")
-            pats = ([norm] if norm else []) + list(f.get("normalize_alt") or [])
-            hit = next((p for p in pats if _re.search(p, span, _re.IGNORECASE)), None)
-            if hit:
-                if f.get("value_first"):
-                    # distinctive shape admits the span; anchors decide rank
-                    s = max(s, TUNE["value_first_floor"]) + TUNE["value_first_bonus"]
-                elif s > TUNE["proximity_floor"]:
-                    s += TUNE["proximity_boost"]  # anchor-proximate value
-            trig = (f.get("resolve") or {}).get("triggers", [])
-            if trig and any(_re.search(t, span, _re.IGNORECASE) for t in trig):
-                # pronominal reference: admit for backward resolution
-                s = max(s, TUNE["span_threshold"] + 1.0)
-            if _re.match(r"\s*\d+\.\s+[A-Z][A-Z \-/&]+", span):
-                s += TUNE["heading_bonus"]  # numbered section heading in span
-            for h in f.get("headings", []):
-                if h.lower() in span.lower():
-                    s += TUNE["headings_bonus"]  # field's own section heading
-                    break
-            for pat in f.get("couple", []):
-                if _re.search(pat, span, _re.IGNORECASE):
-                    s += TUNE["couple_bonus"]  # verb+value tight adjacency
-                    break
-            for pat in f.get("demote", []):
-                if _re.search(pat, span, _re.IGNORECASE):
-                    s -= TUNE["demote_penalty"]  # decoy context (incorporation/address)
-                    break
+            s, mechs = _score_span(span, f)
             if s > TUNE["span_threshold"]:
-                scored.append((s, f["name"], span))
+                scored.append((s, f["name"], span, mechs))
     scored.sort(reverse=True)
     claimed_values: set[str] = set()
-    for _, name, span in scored:
+    for _, name, span, mechs in scored:
         if name in results:
             continue
         f = next(x for x in pending if x["name"] == name)
@@ -172,7 +145,8 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
                 hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
                 results[name] = {"value": value, "verbatim": span.strip(),
                                  **hit, "grounded": True, "source": "local",
-                                 "resolved_reference": True}
+                                 "resolved_reference": True,
+                                 "_mechanisms": ["resolve", *sorted(mechs)]}
                 claimed_values.add(value)
             continue
         if value is None:
@@ -184,8 +158,50 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
             continue  # same value already claimed by a higher scorer
         hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
         results[name] = {"value": value, "verbatim": span.strip(),
-                         **hit, "grounded": True, "source": "local"}
+                         **hit, "grounded": True, "source": "local",
+                         "_mechanisms": sorted(mechs)}
         claimed_values.add(value)
+
+
+def _score_span(span: str, f: dict) -> tuple[float, set]:
+    """Score a span, tracking which mechanisms fired. Pure function for attribution."""
+    s = local.score(span, f.get("anchors", []))
+    mechs: set = set()
+    norm = f.get("normalize")
+    pats = ([norm] if norm else []) + list(f.get("normalize_alt") or [])
+    hit = next((p for p in pats if _re.search(p, span, _re.IGNORECASE)), None)
+    if hit:
+        if f.get("value_first"):
+            # distinctive shape admits the span; anchors decide rank
+            s = max(s, TUNE["value_first_floor"]) + TUNE["value_first_bonus"]
+            mechs.add("value_first")
+        elif s > TUNE["proximity_floor"]:
+            s += TUNE["proximity_boost"]  # anchor-proximate value
+            mechs.add("proximity")
+    trig = (f.get("resolve") or {}).get("triggers", [])
+    if trig and any(_re.search(t, span, _re.IGNORECASE) for t in trig):
+        # pronominal reference: admit for backward resolution
+        s = max(s, TUNE["span_threshold"] + 1.0)
+        mechs.add("resolve_trigger")
+    if _re.match(r"\s*\d+\.\s+[A-Z][A-Z \-/&]+", span):
+        s += TUNE["heading_bonus"]  # numbered section heading in span
+        mechs.add("heading")
+    for h in f.get("headings", []):
+        if h.lower() in span.lower():
+            s += TUNE["headings_bonus"]  # field's own section heading
+            mechs.add("headings")
+            break
+    for pat in f.get("couple", []):
+        if _re.search(pat, span, _re.IGNORECASE):
+            s += TUNE["couple_bonus"]  # verb+value tight adjacency
+            mechs.add("couple")
+            break
+    for pat in f.get("demote", []):
+        if _re.search(pat, span, _re.IGNORECASE):
+            s -= TUNE["demote_penalty"]  # decoy context (incorporation/address)
+            mechs.add("demote")
+            break
+    return s, mechs
 
 def _llm_pass(doc: Document, llm_fields: list[dict], results: dict) -> None:
     """Small model first; escalate flagged fields that miss or unground."""
@@ -307,6 +323,11 @@ def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:
                 pass
     grounded = sum(1 for r in results.values() if isinstance(r, dict) and r.get("grounded"))
     stats = results.pop("_retrieval", None)
+    debug = {}
+    for name in list(results.keys()):
+        r = results[name]
+        if isinstance(r, dict) and "_mechanisms" in r:
+            debug[name] = sorted(r.pop("_mechanisms"))
     meta: dict = {"format": doc.format, "pages": len(doc.pages),
                   "grounding_rate": f"{grounded}/{len(results)}"}
     try:
@@ -316,4 +337,6 @@ def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:
         pass
     if stats:
         meta["retrieval"] = stats
+    if debug and os.getenv("QLERIC_DEBUG"):
+        meta["debug"] = {"mechanisms": debug}
     return {"fields": results, "meta": meta}

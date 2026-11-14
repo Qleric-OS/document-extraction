@@ -48,32 +48,41 @@ def main(n: int = 20, seed: int = 7) -> None:
             continue  # redacted/unanswerable truth
         stem = r["Filename"].rsplit(".", 1)[0]
         txtdir = os.path.join(CUAD, "full_contract_txt")
-        cand = next((f for f in os.listdir(txtdir) if f.startswith(stem[:30])), None)
-        if cand:
-            txt = os.path.join(txtdir, cand)
+        exact = stem + ".txt"
+        if exact in os.listdir(txtdir):
+            parts = [exact]
+        else:
+            parts = sorted(f for f in os.listdir(txtdir) if f.startswith(stem))
+        if parts:  # one txt (or several parts): assemble in order, track pages
+            pages = []
+            for p in parts:
+                with open(os.path.join(txtdir, p), "rb") as fh:
+                    t = fh.read().decode("utf-8", "replace")
+                pages.append(Page(number=len(pages) + 1, text=t))
+            doc = Document(format="TXT", pages=pages)
         else:
             pdfdir = os.path.join(CUAD, "full_contract_pdf")
             cand = next((f for f in os.listdir(pdfdir) if f.startswith(stem[:30])), None)
             if not cand:
                 print(f"  SKIP {r['Filename'][:40]} (no text or pdf)")
                 continue
-            txt = os.path.join(pdfdir, cand)
-        if not os.path.exists(txt):
-            continue
-        with open(txt, "rb") as fh:
-            data = fh.read()
-        try:
-            doc = parse(data, "txt")  # type: ignore[arg-type]
-        except ValueError:
-            doc = Document(format="TXT", pages=[Page(number=1, text=data.decode("utf-8", "replace"))])
+            with open(os.path.join(pdfdir, cand), "rb") as fh:
+                data = fh.read()
+            ext = "pdf" if cand.lower().endswith(".pdf") else "txt"
+            try:
+                doc = parse(data, ext)  # type: ignore[arg-type]
+            except ValueError:
+                doc = Document(format="TXT", pages=[Page(number=1, text=data.decode("utf-8", "replace"))])
+            multi = False
+        os.environ["QLERIC_DEBUG"] = "1"
         res = query(doc, [LAW], None)
-        got = (res["fields"].get("governing_law") or {})
+        got = res["fields"].get("governing_law") or {}
         val, grounded = got.get("value"), got.get("grounded")
         hit = bool(match("governing_law", val, r["Governing Law-Answer"].strip()))
         total += 1
         hits += hit
-        method = ("resolve" if got.get("resolved_reference") else
-                  (got.get("source") or "null"))
+        mech = ",".join(res.get("meta", {}).get("debug", {}).get("mechanisms", {}).get("governing_law", []))
+        method = ("resolve:" if got.get("resolved_reference") else "") + (mech or got.get("source", "null"))
         methods[method] = methods.get(method, 0) + 1
         mark = "Y" if hit else "n"
         print(f"| {r['Filename'][:38]} | {r['Governing Law-Answer'].strip()[:28]} | "
