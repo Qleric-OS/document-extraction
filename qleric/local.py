@@ -102,10 +102,10 @@ def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
     reassemble = field.get("reassemble", True)
     if stop_anchors is None:
         if stop_fields is None:
+            # Unreachable from query() (core always passes siblings), kept for
+            # direct find_section callers.
             from .packs import RESUME_FIELDS  # legacy default
             stop_fields = RESUME_FIELDS
-        stop_anchors = [a for f in stop_fields if f.get("section")
-                        for a in f.get("anchors", [])]
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     starts: list[tuple[int, str]] = [(i, ln) for i, ln in enumerate(lines)]
     for i, ln in enumerate(lines):  # paragraph-embedded headings: clause windows can start

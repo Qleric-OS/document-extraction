@@ -9,6 +9,7 @@ Field spec — every key a pack field may declare:
 | hint | llm/local | human description; also the default retrieval keywords |
 | anchors | local | fuzzy-match phrases for span search |
 | normalize | local | regex cleaning the span (capture group = value); None = span is the value |
+| threshold | local | reserved: per-field span-threshold override (unused; global TUNE applies) |
 | strip | local | trailing words to strip after normalize |
 | reject | local | value-shape trap to skip (e.g. year ranges matching phone) |
 | match_first | local | accept direct pattern hit without anchor (self-identifying: email/phone) |
@@ -18,7 +19,7 @@ Field spec — every key a pack field may declare:
 | exclude | section | false-friend lines that never start the section |
 | member | section | body-line pattern (reassembly + filtering) |
 | qualify | section | assembled value must match, else None (wrong-substance guard) |
-| stop_fields | section | rival-heading pack (defaults to own pack's sections) |
+| stop_fields | section | rival-heading pack (core always passes sibling sections) |
 | reassemble | section | doc-wide member sweep for shuffled docs (default True) |
 | columns | table | header synonyms for row-grounded items |
 | pattern | pii | sweep regex; all occurrences returned |

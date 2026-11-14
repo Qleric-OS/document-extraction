@@ -9,7 +9,7 @@ import os
 import re as _re
 from . import grounding, highlight, local
 from .documents import Document
-from .lm import LMError, chat
+from .lm import DEFAULT_BIG_MODEL, LMError, chat
 from .local import TUNE
 from .packs.pii import EXCLUDE
 SYSTEM = ("You are a precise document reader. Extract the requested fields. "
@@ -165,7 +165,7 @@ def _llm_pass(doc: Document, llm_fields: list[dict], results: dict) -> None:
     big_fields = [f for f in llm_fields if f.get("escalate")
                   and not results.get(f["name"], {}).get("grounded")]
     if big_fields:
-        big_model = os.getenv("MODEL_BIG", "")
+        big_model = os.getenv("MODEL_BIG", DEFAULT_BIG_MODEL)
         if big_model:
             _run_lm_pass(doc, big_fields, results, model=big_model, tier="big")
 
