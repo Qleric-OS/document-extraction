@@ -19,36 +19,27 @@ Three tiers, cheapest first. Each tier only sees what the previous couldn't cite
 
 ```mermaid
 flowchart LR
-    L[local/table/pii: $0] -->|unmatched| S[small model: $0.001/doc]
-    S -->|miss or ungrounded + escalate| B[big model: metered]
-    B --> H[honest null]
-```
-
-- **Local** resolves everything nameable (dates, totals, sections, sweeps, rows).
-- **Small** (`MODEL`, default gpt-6-luna) takes the residue: sellers, skills, clauses. Single pass.
-- **Big** (`MODEL_BIG`, unset by default) fires only on fields flagged `"escalate": true` that come back missed or ungrounded. Contract clauses carry the flag; invoice/resume don't need it.
-- Every tier answers to the same grounding gate, and `meta.cost` itemizes each call by model.
-
-```mermaid
-flowchart LR
     D[PDF/DOCX] --> P[parse: pages + tables + bboxes]
-    P --> L[local: fuzzy spans, sections, sweeps — $0]
-    P --> T[table: row-grounded items — $0]
-    L & T --> G{grounded?}
-    G -->|verbatim found| O[cited value + bbox]
-    G -->|unmatched| M[BYOK small model, single pass]
-    M --> G
-    G -->|still unmatched| H[honest null, never invented]
+    P --> L[local / table / pii: $0]
+    L -->|unmatched| S[small model: $0.001/doc]
+    S -->|miss or ungrounded + escalate| B[big model: metered]
+    B --> H[honest null, never invented]
 ```
+
+- **Local** (`local`, `table`, `pii` sources) resolves everything nameable: dates, totals, sections, sweeps, rows. $0.
+- **Small** (`MODEL`, default gpt-6-luna; `source: llm-small`) takes the residue: sellers, skills, clauses. Single targeted pass.
+- **Big** (`MODEL_BIG`, unset by default; `source: llm-big`) fires only on fields flagged `"escalate": true` that come back missed or ungrounded.
+- `deep=true` widens the small pass to all unmatched fields; it does not trigger big-tier (big needs `escalate` + a miss regardless).
+- Every tier answers to the same grounding gate, and `meta.cost` itemizes each call by model.
 
 Four strategies per field, declared in the pack — not chosen at runtime:
 
-| strategy | cost | what it does |
-|---|---|---|
-| `local` | $0 | fuzzy anchor search → span → normalize → ground. Dates, totals, sections, law. |
-| `table` | $0 | header match → rows as items with per-cell bboxes. Line items. |
-| `pii` | $0 | full-doc sweep, all occurrences + `bboxes`. Emails, phones, SSNs, cards, IBANs. |
-| `llm` | metered | single pass for what can't be named: sellers, skills, clauses. Verified locally, same gate. |
+| strategy | cost | `source` values | what it does |
+|---|---|---|---|
+| `local` | $0 | `local` | fuzzy anchor search → span → normalize → ground. Dates, totals, sections, law. |
+| `table` | $0 | `table` | header match → rows as items with per-cell bboxes. Line items. |
+| `pii` | $0 | `pii` | full-doc sweep, all occurrences + `bboxes`. Emails, phones, SSNs, cards, IBANs. |
+| `llm` | metered | `llm-small`, `llm-big` | single pass for what can't be named: sellers, skills, clauses. Verified locally, same gate. |
 
 No value bypasses grounding. `grounded: false` means flagged, never silently trusted.
 
@@ -59,6 +50,16 @@ pip install -r requirements.txt
 python api.py
 curl -X POST -F "file=@invoice.pdf" -F "pack=invoice" http://localhost:5000/analyze
 ```
+
+Or the CLI (same core, no server):
+
+```bash
+pip install -e .               # exposes the `qleric` command
+qleric invoice.pdf --pack invoice
+qleric resume.pdf --pack resume --deep --annotate -o out.json
+```
+
+Docker: `docker build -t qleric . && docker run -p 5000:5000 -e API_KEY=... qleric`
 
 ```json
 {
@@ -99,12 +100,12 @@ No hosted key, no vendor SDK. Keys never logged, `.env` gitignored.
 
 | run | calls | tokens in/out | cost |
 |---|---|---|---|
-| 8 CUAD contracts, gpt-6-luna | 8 | 59,703 / 2,210 | $0.0103 |
-| 127 mixed requests, gpt-6-luna | 127 | ~50k / ~19k | ~$0.01 |
-| 90-case corpus, keyless | 0 | 0 / 0 | $0 |
-| 5 CUAD escalation, sparse context (luna → sol) | 10 | 69,709 / 7,195 | $0.0851 — 0 additional closes |
-| 8 CUAD escalation, dense retrieval (luna → sol) | 16 | 37,854 / 7,566 | $0.0634 — termination 62→88%, non-compete →100% |
-The two escalation rows are the thesis in numbers: a big model on a raw dump closes nothing ($0.085, 0 closes); the same model on dense retrieval converts ($0.063, termination +26pp, non-compete 100%). Retrieval, not reasoning.
+| 8 CUAD, luna-only (Nov 12) | 8 | 59,703 / 2,210 | $0.0103 |
+| 127 mixed, luna-only (Nov 11) | 127 | ~50k / ~19k | ~$0.01 |
+| 90-case corpus, keyless (all runs) | 0 | 0 / 0 | $0 |
+| 5 CUAD escalation, sparse ctx (Nov 12) | 10 | 69,709 / 7,195 | $0.0851 — 0 additional closes |
+| 8 CUAD escalation, dense retrieval (Nov 13) | 16 | 37,854 / 7,566 | $0.0634 — termination 62→88%, non-compete →100% |
+The two escalation rows are the thesis in numbers: a big model on a raw dump closes nothing; the same model on dense retrieval converts. Retrieval, not reasoning.
 
 ## Evals
 

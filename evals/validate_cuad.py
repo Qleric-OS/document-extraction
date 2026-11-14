@@ -17,7 +17,10 @@ from qleric import parse, query  # noqa: E402
 from qleric.packs import CONTRACT_FIELDS  # noqa: E402
 from evals.eval import match  # noqa: E402
 
-CUAD = os.path.expanduser("~/Desktop/CUAD_v1")
+CUAD = os.getenv("CUAD_DIR", os.path.expanduser("~/Desktop/CUAD_v1"))
+if not os.path.isdir(CUAD):
+    print(f"CUAD corpus not found at {CUAD}. Set CUAD_DIR to a CUAD_v1 checkout to run this validation.")
+    raise SystemExit(2)
 LOCAL_MAP = [
     ("agreement_date", "Agreement Date-Answer"),
     ("effective_date", "Effective Date-Answer"),

@@ -182,6 +182,10 @@ if __name__ == "__main__":
     corpus = sys.argv[1] if len(sys.argv) > 1 else "samples/corpus/corpus.jsonl"
     deep = "--deep" in sys.argv
     limit = int(sys.argv[sys.argv.index("--limit") + 1]) if "--limit" in sys.argv else 0
+    if deep and not (os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+                      or os.getenv("ANTHROPIC_API_KEY")):
+        print("eval: --deep needs an LLM key (API_KEY/OPENAI_API_KEY/ANTHROPIC_API_KEY). "
+              "Keyless local fields still grade; LLM fields will miss honestly.")
     r = run(corpus, deep=deep, limit=limit)
     print(report(r))
     out = os.getenv("EVAL_OUT", "")

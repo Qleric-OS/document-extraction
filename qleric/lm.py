@@ -28,6 +28,10 @@ DEFAULT_BIG_MODEL = "gpt-6.1-sol"
 _REASONING_PREFIXES = ("o1", "o3", "o4", "gpt-5")
 
 
+def is_reasoning_model(model: str) -> bool:
+    return model.lower().startswith(_REASONING_PREFIXES)
+
+
 def _config(model: str | None = None) -> tuple[str, str, str]:
     """Resolve (base_url, api_key, model). Anthropic needs its own base URL + headers."""
     model = model or os.getenv("MODEL", DEFAULT_MODEL)
