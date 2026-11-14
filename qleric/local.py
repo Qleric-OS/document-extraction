@@ -26,6 +26,8 @@ TUNE = {
     "heading_bonus": 25.0,       # numbered section heading in span
     "headings_bonus": 50.0,      # field's own section heading present
     "match_first_score": 101.0,  # self-identifying pattern direct hit
+    "couple_bonus": 30.0,        # verb+jurisdiction tight adjacency
+    "demote_penalty": 40.0,     # incorporation/address context present
     "stop_threshold": 60.0,      # rival-heading stop line
     "long_line": 160,            # paragraph-embedded split threshold
     "min_window": 15,            # shortest clause window kept
@@ -106,6 +108,8 @@ def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
             # direct find_section callers.
             from .packs import RESUME_FIELDS  # legacy default
             stop_fields = RESUME_FIELDS
+        stop_anchors = [a for f in stop_fields if f.get("section")
+                        for a in f.get("anchors", [])]
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     starts: list[tuple[int, str]] = [(i, ln) for i, ln in enumerate(lines)]
     for i, ln in enumerate(lines):  # paragraph-embedded headings: clause windows can start
@@ -159,15 +163,30 @@ def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
         return val
     return None
 
-def normalize(pattern: str | None, span: str, strip: list[str] | None = None) -> str | None:
-    """Clean a span: capture group if pattern matches, else None (no value found)."""
+def normalize(pattern: str | None, span: str, strip: list[str] | None = None,
+              alternates: list[str] | None = None, clean=None) -> str | None:
+    """Clean a span: capture group if pattern matches, else None (no value found).
+
+    alternates: further patterns tried in order (longest-prefix-first grammars).
+    clean: post-processor for the captured value (e.g. jurisdiction trimming).
+    """
     if not pattern:
         return span.strip()
     m = re.search(pattern, span, re.IGNORECASE)
+    if not m and alternates:
+        for alt in alternates:
+            m = re.search(alt, span, re.IGNORECASE)
+            if m:
+                break
     if not m:
         return None
     groups = [g for g in m.groups() if g]
     val = (groups[-1] if groups else m.group(0)).strip()
+    if clean is not None:
+        try:
+            return clean(val)
+        except Exception:
+            return None
     if strip:
         for w in strip:
             val = re.sub(rf"\s+{w}\s*$", "", val, flags=re.IGNORECASE).strip()

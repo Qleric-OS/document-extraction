@@ -115,7 +115,7 @@ Seeded synthetic corpus (`evals/generate.py`) + private real-doc validation:
 
 | suite | result |
 |---|---|
-| 90 synthetic (invoice / resume / PII) | 100% offline fields, 0 false grounds. Axes: label variants, EU/US dates, case noise, junk, 2-page, overlap traps, **filing-header decoys, paragraph-embedded values** |
+| 105 synthetic (invoice / resume / PII / contract) | 100% offline fields incl. 15 governing-law cases with incorporation decoys, 0 false grounds |
 | CUAD contracts (public clause truth) | agreement 62%, renewal 80%, exclusivity 100%, MFN 88%; inferred dates nulled. Yes/No flags grade correct nulls as hits |
 | your docs (`python -m evals.validate_real`) | real CVs: 100% offline |
 

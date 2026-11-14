@@ -178,8 +178,41 @@ def gen_pii(i: int) -> dict:
     if rng.random() < 0.3:
         pages = [lines[:len(lines) // 2], lines[len(lines) // 2:]]
     return {"id": f"pii_{i:03d}", "pack": "pii",
-            "pdf": _pdf(pages, f"pii_{i:03d}.pdf"),
-            "expected": {k: sorted(v) for k, v in exp_m.items()}}
+            "pdf": _pdf(pages, f"pii_{i:03d}.pdf"), "expected": {k: sorted(v) for k, v in exp_m.items()}}
+
+
+LAW_FORMS = [
+    "shall be governed by the laws of the State of {law}",
+    "governed by {law} law",
+    "construed in accordance with the laws of {law}",
+    "laws of the Province of {law}",
+]
+LAW_DECOYS = [  # incorporation/address traps: must NOT win over the clause
+    "incorporated under the laws of the State of {decoy}",
+    "with its principal place of business in {decoy}",
+    "notices to be sent to the address in {decoy}",
+]
+LAWS = ["Nevada", "Delaware", "New York", "Texas", "Florida", "Ontario",
+        "England and Wales", "Hong Kong", "District of Columbia"]
+
+
+def gen_contract(i: int) -> dict:
+    law, decoy = rng.sample(LAWS, 2)
+    if rng.random() < 0.25:
+        decoy = law  # coincident jurisdiction: either answer acceptable, grade leniently
+    form = rng.choice(LAW_FORMS)
+    lines = [f"MASTER SERVICES AGREEMENT {i:03d}",
+             f"23. GOVERNING LAW. This Agreement {form.format(law=law)}."]
+    if rng.random() < 0.7:
+        lines.insert(1, rng.choice(LAW_DECOYS).format(decoy=decoy).capitalize() + ".")
+    if rng.random() < 0.3:  # unheaded variant: clause without the numbered heading
+        lines = [f"MASTER SERVICES AGREEMENT {i:03d}",
+                 f"This Agreement {form.format(law=law)}."]
+    exp = {"governing_law": law,
+           "_decoy": None if decoy == law else decoy}
+    pages = [_noise(lines, case_odds=0.1, junk_odds=0.15)]
+    return {"id": f"con_{i:03d}", "pack": "contract",
+            "pdf": _pdf(pages, f"con_{i:03d}.pdf"), "expected": exp}
 
 
 def main(n_each: int = 30):
@@ -188,6 +221,8 @@ def main(n_each: int = 30):
         cases.append(gen_invoice(i))
         cases.append(gen_resume(i))
         cases.append(gen_pii(i))
+        if i < 15:
+            cases.append(gen_contract(i))
     with open(OUT / "corpus.jsonl", "w") as f:
         for c in cases:
             f.write(json.dumps(c) + "\n")

@@ -21,9 +21,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from qleric import parse, query  # noqa: E402
-from qleric.packs import INVOICE_FIELDS, PII_FIELDS, RESUME_FIELDS  # noqa: E402
+from qleric.packs import CONTRACT_FIELDS, INVOICE_FIELDS, PII_FIELDS, RESUME_FIELDS  # noqa: E402
 
-PACKS = {"invoice": INVOICE_FIELDS, "resume": RESUME_FIELDS, "pii": PII_FIELDS}
+PACKS = {"invoice": INVOICE_FIELDS, "resume": RESUME_FIELDS, "pii": PII_FIELDS,
+         "contract": CONTRACT_FIELDS}
 SKIP_LLM_ONLY = {"line_items"}  # no synthetic truth
 
 
@@ -46,6 +47,14 @@ def match(name: str, got: str | None, exp) -> bool | None:
         return False
     if is_money_field(name):
         return money_digits(got) == money_digits(str(exp))
+    if "governing_law" in name or "jurisdiction" in name:
+        import re as _re
+        def _canon(v: str) -> str:
+            v = _re.sub(r"\s*[,;].*$", "", v.strip().lower())
+            v = _re.sub(r"\s+(federal|state|province|commonwealth|district|republic)\s*$", "", v)
+            return _re.sub(r"\s+", " ", v).strip()
+        g, e = _canon(got), _canon(str(exp))
+        return g == e or g in e or e in g
     if "date" in name:  # compare as parsed dates, not strings
         import datetime as _dt
         fmts = ("%Y-%m-%d", "%d.%m.%Y", "%m/%d/%Y", "%d/%m/%Y",

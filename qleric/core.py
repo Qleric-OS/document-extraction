@@ -87,7 +87,8 @@ def _offline_pass(doc: Document, fields: list[dict], results: dict) -> None:
             stops = [x for x in fields if x.get("section")] or None
             span = local.find_section(doc.body_text, f, stop_fields=stops)
             if span:
-                value = local.normalize(f.get("normalize"), span, f.get("strip"))
+                value = local.normalize(f.get("normalize"), span, f.get("strip"),
+                                                        alternates=f.get("normalize_alt"), clean=f.get("clean"))
                 hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
                 results[f["name"]] = {"value": value, "verbatim": span.strip(),
                                       **hit, "grounded": True, "source": "local"}
@@ -116,7 +117,8 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
             best = local.find_span(doc.body_text, f.get("anchors", []),
                                    f.get("normalize"), reject=f.get("reject"))
             if best:
-                v0 = local.normalize(f.get("normalize"), best, f.get("strip"))
+                v0 = local.normalize(f.get("normalize"), best, f.get("strip"),
+                                                        alternates=f.get("normalize_alt"), clean=f.get("clean"))
                 rej = f.get("reject")
                 if v0 is not None and not (rej and _re.search(rej, v0, _re.IGNORECASE)):
                     scored.append((TUNE["match_first_score"], f["name"], best))
@@ -136,6 +138,14 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
                 if h.lower() in span.lower():
                     s += TUNE["headings_bonus"]  # field's own section heading
                     break
+            for pat in f.get("couple", []):
+                if _re.search(pat, span, _re.IGNORECASE):
+                    s += TUNE["couple_bonus"]  # verb+value tight adjacency
+                    break
+            for pat in f.get("demote", []):
+                if _re.search(pat, span, _re.IGNORECASE):
+                    s -= TUNE["demote_penalty"]  # decoy context (incorporation/address)
+                    break
             if s > TUNE["span_threshold"]:
                 scored.append((s, f["name"], span))
     scored.sort(reverse=True)
@@ -144,7 +154,8 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
         if name in results:
             continue
         f = next(x for x in pending if x["name"] == name)
-        value = local.normalize(f.get("normalize"), span, f.get("strip"))
+        value = local.normalize(f.get("normalize"), span, f.get("strip"),
+                                                        alternates=f.get("normalize_alt"), clean=f.get("clean"))
         if value is None:
             continue  # anchor matched but no value present (template/placeholder)
         rej = f.get("reject")
