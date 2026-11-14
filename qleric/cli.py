@@ -25,8 +25,8 @@ PACKS = {"invoice": INVOICE_FIELDS, "resume": RESUME_FIELDS,
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="qleric", description=__doc__.splitlines()[0])
-    ap.add_argument("file", help="PDF or DOCX to extract from")
+    ap = argparse.ArgumentParser(prog="qleric", description="grounded document extraction")
+    ap.add_argument("file", nargs="?", help="PDF or DOCX to extract from")
     ap.add_argument("--pack", default="invoice", choices=sorted(PACKS),
                     help="domain pack (default: invoice)")
     ap.add_argument("--deep", action="store_true",
@@ -35,10 +35,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="write highlighted PDF beside the output")
     ap.add_argument("-o", "--output", help="write JSON here (default: stdout)")
     ap.add_argument("--model", help="override MODEL env for this run")
+    ap.add_argument("--smoke", action="store_true",
+                    help="import every module + one keyless query per pack; exit 0/1")
     args = ap.parse_args(argv)
 
-    if args.model:
-        os.environ["MODEL"] = args.model
+    if args.smoke:
+        return smoke()
+    if not args.file:
+        ap.error("file is required unless --smoke is given")
     try:
         with open(args.file, "rb") as f:
             data = f.read()
@@ -79,6 +83,53 @@ def main(argv: list[str] | None = None) -> int:
             f.write(text)
     else:
         print(text)
+    return 0
+
+
+def smoke() -> int:
+    """Import every module + one keyless query per pack. Exit 0/1."""
+    import io
+    import fitz  # PyMuPDF
+    from qleric import costs, grounding, highlight, lm, local  # noqa: F401 (import = test)
+    from qleric import mcp  # noqa: F401
+    from qleric.documents import Document, Page
+    failures = []
+    # lm surface: predicates + payload builders must exist and run keyless-safe
+    try:
+        assert lm.is_reasoning_model("o1-mini") is True
+        assert lm.is_reasoning_model("gpt-6-luna") is False
+        assert lm._config("gpt-6-luna")[0].endswith("v1")
+    except Exception as e:
+        failures.append(f"lm: {e}")
+    for pack_name, fields in PACKS.items():
+        try:
+            doc = fitz.open()
+            page = doc.new_page()
+            page.insert_text((72, 100), "Smoke Test\nRef: SMOKE-1\nTotal Due $10.00\nContact a@b.co")
+            buf = io.BytesIO()
+            doc.save(buf)
+            pdf = buf.getvalue()
+            res = query(parse(pdf, "pdf"), fields, pdf)
+            assert "fields" in res and "meta" in res
+            assert "cost" in res["meta"] and "retrieval" in res["meta"]
+        except Exception as e:
+            failures.append(f"{pack_name}: {type(e).__name__}: {e}")
+    # highlight round-trip on one pack
+    try:
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 100), "Hello World")
+        buf = io.BytesIO()
+        doc.save(buf)
+        out = highlight.annotate(buf.getvalue(), [{"page_number": 1, "quote": "Hello"}])
+        assert len(out) > 1000
+    except Exception as e:
+        failures.append(f"highlight: {type(e).__name__}: {e}")
+    _ = (Document, Page, grounding, costs)  # silence linters; imports are the test
+    if failures:
+        print("SMOKE FAIL:\n  " + "\n  ".join(failures))
+        return 1
+    print(f"smoke ok: {len(PACKS)} packs + lm + highlight")
     return 0
 
 

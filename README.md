@@ -57,6 +57,7 @@ Or the CLI (same core, no server):
 pip install -e .               # exposes the `qleric` command
 qleric invoice.pdf --pack invoice
 qleric resume.pdf --pack resume --deep --annotate -o out.json
+qleric --smoke                  # import every module + keyless query per pack
 ```
 
 Docker: `docker build -t qleric . && docker run -p 5000:5000 -e API_KEY=... qleric`
