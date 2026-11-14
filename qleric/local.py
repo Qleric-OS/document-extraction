@@ -37,17 +37,13 @@ def _label(span: str) -> str:
     return s if re.search(r"[a-zA-Z]", s or "") else span
 
 def score(span: str, anchors: list[str]) -> float:
-    return _score(span, anchors)
-
-
-def _score(span: str, anchors: list[str]) -> float:
+    """Full-string ratio on the label: substring luck (bill no vs Bill date)
+    loses to true matches (Ref vs ref no). No partial fallback."""
     label = _label(span)
     if fuzz is None:
         words = set(label.lower().split())
         return max((len(set(a.lower().split()) & words) / max(len(a.split()), 1)
                     for a in anchors), default=0.0) * 100
-    # full-string ratio on the label: substring luck (bill no vs Bill date)
-    # loses to true matches (Ref vs ref no). No partial fallback.
     return max((fuzz.ratio(label.lower(), a.lower()) for a in anchors), default=0.0)
 
 
@@ -66,15 +62,15 @@ def find_span(text: str, anchors: list[str], threshold: float = 55.0,
     if pattern and match_first:
         anchored = [s for s in candidates(text)
                     if re.search(pattern, s, re.IGNORECASE)
-                    and _score(s, anchors) > 30.0 and _ok(s)]
+                    and score(s, anchors) > 30.0 and _ok(s)]
         if anchored:
-            return max(anchored, key=lambda s: _score(s, anchors))
+            return max(anchored, key=lambda s: score(s, anchors))
         for s in candidates(text):  # bare value fallback (no label at all)
             if re.search(pattern, s, re.IGNORECASE) and _ok(s):
                 return s
     best, best_score = None, threshold
     for span in candidates(text):
-        s = _score(span, anchors)
+        s = score(span, anchors)
         if s > best_score:
             best, best_score = span, s
     return best
@@ -118,7 +114,7 @@ def find_section(text: str, anchors: list[str], threshold: float = 55.0,
             continue  # false friend: never a section start
         if heading and not re.search(heading, ln):
             continue  # unheaded span: not a section start (body handled by member)
-        s = _score(ln, anchors)
+        s = score(ln, anchors)
         if s <= threshold:
             continue
         density = 0
@@ -137,7 +133,7 @@ def find_section(text: str, anchors: list[str], threshold: float = 55.0,
         for i, ln in enumerate(lines):
             if i <= origin:
                 continue  # heading line itself; body follows (or window covers it)
-            if _score(ln, stop_anchors) > 60.0 and _score(ln, anchors) <= _score(ln, stop_anchors):
+            if score(ln, stop_anchors) > 60.0 and score(ln, anchors) <= score(ln, stop_anchors):
                 break  # a different section starts
             body.append(ln)
         if member:

@@ -10,8 +10,9 @@ import csv
 import os
 import re
 import sys
+from pathlib import Path
 
-sys.path.insert(0, ".")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from qleric import parse, query  # noqa: E402
 from qleric.packs import CONTRACT_FIELDS  # noqa: E402
 from evals.eval import match  # noqa: E402

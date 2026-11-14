@@ -5,10 +5,11 @@ Regex survives only as span normalizer, never as extraction strategy.
 """
 from __future__ import annotations
 
+import re as _re
+
 from . import grounding, highlight, local
 from .documents import Document
 from .lm import LMError, chat
-
 SYSTEM = ("You are a precise document reader. Extract the requested fields. "
           "For each field return value, verbatim (exact substring from the text), "
           "and page_number (1-based). If not found, value is null.")
@@ -48,7 +49,6 @@ def _schema_hint(fields: list[dict]) -> str:
 def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
           deep: bool = False) -> dict:
     """Run extraction. local/pii spans offline, LLM only for llm fields (or deep=True)."""
-    import re as _re
     results: dict[str, dict] = {}
     pending: list[dict] = []
     for f in fields:  # offline pass: fuzzy spans + PII sweeps, no key needed
@@ -178,7 +178,6 @@ def _targeted_context(doc: Document, llm_fields: list[dict], budget: int = 12000
     windows go in; the full document is fallback when nothing scores.
     Stats land in _LAST_RETRIEVAL for meta + eval.
     """
-    import re as _re
     windows: list[tuple[float, str, str]] = []  # (score, field, text)
     per_field: dict[str, dict] = {}
     for f in llm_fields:
@@ -214,7 +213,6 @@ def _targeted_context(doc: Document, llm_fields: list[dict], budget: int = 12000
 
 
 def re_words(s: str) -> list[str]:
-    import re as _re
     return _re.findall(r"[A-Za-z]{4,}", s)
 
 

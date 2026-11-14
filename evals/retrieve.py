@@ -7,8 +7,9 @@ keywords until the clause you want is window #1.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-sys.path.insert(0, ".")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from qleric import core  # noqa: E402
 from qleric.documents import Document, Page, parse  # noqa: E402
 from qleric.packs import CONTRACT_FIELDS, INVOICE_FIELDS, PII_FIELDS, RESUME_FIELDS  # noqa: E402

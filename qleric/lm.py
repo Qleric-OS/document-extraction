@@ -18,18 +18,19 @@ import urllib.request
 class LMError(RuntimeError):
     pass
 
-# Reasoning models: no response_format, no system role, completion-token param.
+# Small (default) and big (escalation) tiers. gpt-6.1-sol supersedes base
+# gpt-6-sol at the same price ("near-Astra performance", Oct 2026).
+DEFAULT_MODEL = "gpt-6-luna"
+DEFAULT_BIG_MODEL = "gpt-6.1-sol"
+
+# Legacy reasoning models needing a special payload (no response_format,
+# no system role). GPT-6 family takes the standard path.
 _REASONING_PREFIXES = ("o1", "o3", "o4", "gpt-5")
-
-
-def is_reasoning_model(model: str) -> bool:
-    m = model.lower()
-    return m.startswith(_REASONING_PREFIXES)
 
 
 def _config(model: str | None = None) -> tuple[str, str, str]:
     """Resolve (base_url, api_key, model). Anthropic needs its own base URL + headers."""
-    model = model or os.getenv("MODEL", "claude-sonnet-4-6")
+    model = model or os.getenv("MODEL", DEFAULT_MODEL)
     base_url = os.getenv("BASE_URL", "").rstrip("/")
     api_key = (os.getenv("API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
                or os.getenv("ANTHROPIC_API_KEY", ""))

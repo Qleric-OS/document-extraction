@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-sys.path.insert(0, ".")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from evals.eval import match, norm  # noqa: E402
 from qleric import parse, query  # noqa: E402
 from qleric.packs import INVOICE_FIELDS, PII_FIELDS, RESUME_FIELDS  # noqa: E402

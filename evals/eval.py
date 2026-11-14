@@ -17,8 +17,9 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
-sys.path.insert(0, ".")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from qleric import parse, query  # noqa: E402
 from qleric.packs import INVOICE_FIELDS, PII_FIELDS, RESUME_FIELDS  # noqa: E402
 
@@ -72,8 +73,20 @@ def match(name: str, got: str | None, exp) -> bool | None:
         return norm(got) == norm(str(exp))
     return norm(got) == norm(str(exp))
 
+def _pdf_path(base, stored: str):
+    """Resolve a corpus pdf path: absolute, corpus-relative, or legacy repo-relative."""
+    from pathlib import Path as _P
+    direct = base / stored
+    if direct.exists():
+        return direct
+    for root in list(base.parents)[:4]:
+        if (root / stored).exists():
+            return root / stored
+    return _P(stored)  # cwd fallback; surfaces a clear FileNotFoundError
+
 
 def run(corpus: str, deep: bool = False, limit: int = 0) -> dict:
+    base = Path(corpus).resolve().parent  # pdf paths resolve from the corpus file
     per_field: dict[str, dict[str, int]] = {}
     false_grounds: list[str] = []
 
@@ -90,7 +103,7 @@ def run(corpus: str, deep: bool = False, limit: int = 0) -> dict:
                 break
             n += 1
             pack = PACKS[case["pack"]]
-            with open(case["pdf"], "rb") as pf:
+            with open(_pdf_path(base, case["pdf"]), "rb") as pf:
                 data = pf.read()
             try:
                 res = query(parse(data, "pdf"), pack, data, deep=deep)
