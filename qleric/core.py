@@ -126,7 +126,9 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
         for span in local.candidates(doc.body_text):
             s = local.score(span, f.get("anchors", []))
             norm = f.get("normalize")
-            if norm and _re.search(norm, span, _re.IGNORECASE):
+            pats = ([norm] if norm else []) + list(f.get("normalize_alt") or [])
+            hit = next((p for p in pats if _re.search(p, span, _re.IGNORECASE)), None)
+            if hit:
                 if f.get("value_first"):
                     # distinctive shape admits the span; anchors decide rank
                     s = max(s, TUNE["value_first_floor"]) + TUNE["value_first_bonus"]
