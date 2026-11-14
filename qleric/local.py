@@ -64,33 +64,25 @@ def score(span: str, anchors: list[str]) -> float:
     return max((fuzz.ratio(label.lower(), a.lower()) for a in anchors), default=0.0)
 
 
-def find_span(text: str, anchors: list[str], threshold: float = 55.0,
-              pattern: str | None = None, match_first: bool = False,
+def find_span(text: str, anchors: list[str], pattern: str,
               reject: str | None = None) -> str | None:
-    """Best candidate span matching any anchor, or None.
+    """Direct pattern hit for self-identifying values (email/phone).
 
-    match_first: accept a direct pattern hit even without an anchor. Only for
-    self-identifying patterns (email/phone); generic shapes (dates, money, ids)
-    match everywhere and must go through anchors. reject skips known traps
-    (year ranges matching the phone pattern).
+    Prefers anchored spans (pattern + anchor words); falls back to bare values.
+    Generic shapes (dates, money, ids) must go through the global assignment
+    in core, not here. reject skips known traps (year ranges vs phone).
     """
     def _ok(s: str) -> bool:
         return not (reject and re.search(reject, s, re.IGNORECASE))
-    if pattern and match_first:
-        anchored = [s for s in candidates(text)
-                    if re.search(pattern, s, re.IGNORECASE)
-                    and score(s, anchors) > 30.0 and _ok(s)]
-        if anchored:
-            return max(anchored, key=lambda s: score(s, anchors))
-        for s in candidates(text):  # bare value fallback (no label at all)
-            if re.search(pattern, s, re.IGNORECASE) and _ok(s):
-                return s
-    best, best_score = None, threshold
-    for span in candidates(text):
-        s = score(span, anchors)
-        if s > best_score:
-            best, best_score = span, s
-    return best
+    anchored = [s for s in candidates(text)
+                if re.search(pattern, s, re.IGNORECASE)
+                and score(s, anchors) > TUNE["anchor_similarity"] and _ok(s)]
+    if anchored:
+        return max(anchored, key=lambda s: score(s, anchors))
+    for s in candidates(text):  # bare value fallback (no label at all)
+        if re.search(pattern, s, re.IGNORECASE) and _ok(s):
+            return s
+    return None
 
 def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
                  stop_fields: list[dict] | None = None) -> str | None:

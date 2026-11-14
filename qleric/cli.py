@@ -111,7 +111,9 @@ def smoke() -> int:
             pdf = buf.getvalue()
             res = query(parse(pdf, "pdf"), fields, pdf)
             assert "fields" in res and "meta" in res
-            assert "cost" in res["meta"] and "retrieval" in res["meta"]
+            assert "cost" in res["meta"]
+            if any(f.get("strategy", "llm") == "llm" for f in fields):
+                assert "retrieval" in res["meta"], "llm pack missing retrieval stats"
         except Exception as e:
             failures.append(f"{pack_name}: {type(e).__name__}: {e}")
     # highlight round-trip on one pack

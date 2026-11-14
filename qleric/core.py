@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import os
 import re as _re
-
 from . import grounding, highlight, local
 from .documents import Document
 from .lm import LMError, chat
 from .local import TUNE
+from .packs.pii import EXCLUDE
 SYSTEM = ("You are a precise document reader. Extract the requested fields. "
           "For each field return value, verbatim (exact substring from the text), "
           "and page_number (1-based). If not found, value is null.")
@@ -67,7 +67,6 @@ def _offline_pass(doc: Document, fields: list[dict], results: dict) -> None:
     for f in fields:
         strategy = f.get("strategy", "llm")
         if strategy == "pii" and f.get("pattern"):
-            from .packs.pii import EXCLUDE
             claimed = [m for other in EXCLUDE.get(f["name"], set())
                        for m in (results.get(other, {}).get("matches") or [])]
             matches = []
@@ -115,8 +114,7 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
     for f in pending:
         if f.get("match_first") and f.get("normalize"):
             best = local.find_span(doc.body_text, f.get("anchors", []),
-                                   pattern=f.get("normalize"), match_first=True,
-                                   reject=f.get("reject"))
+                                   f.get("normalize"), reject=f.get("reject"))
             if best:
                 v0 = local.normalize(f.get("normalize"), best, f.get("strip"))
                 rej = f.get("reject")
@@ -184,15 +182,16 @@ def _backfill(fields: list[dict], results: dict) -> None:
                                   "source": f.get("strategy", "llm"), "note": note}
 
 
-_LAST_RETRIEVAL: dict = {}  # per-query retrieval stats, surfaced in meta.retrieval
+def re_words(s: str) -> list[str]:
+    return _re.findall(r"[A-Za-z]{4,}", s)
 
-
-def _targeted_context(doc: Document, llm_fields: list[dict], budget: int = 12000) -> str:
+def _targeted_context(doc: Document, llm_fields: list[dict],
+                      budget: int = 12000) -> tuple[str, dict]:
     """Clause-targeted retrieval: keyword windows per field, not the full dump.
 
-    Each llm field declares retrieval keywords (default: hint words). Top
-    windows go in; the full document is fallback when nothing scores.
-    Stats land in _LAST_RETRIEVAL for meta + eval.
+    Returns (context, stats). Stats ride in meta.retrieval; no module globals,
+    so threaded servers can't cross-talk (gunicorn sync workers were safe
+    either way, but explicit beats safe-by-accident).
     """
     windows: list[tuple[float, str, str]] = []  # (score, field, text)
     per_field: dict[str, dict] = {}
@@ -219,23 +218,19 @@ def _targeted_context(doc: Document, llm_fields: list[dict], budget: int = 12000
         used[name] = used.get(name, 0) + 1
     for name, st in per_field.items():
         st["sent"] = used.get(name, 0)
-    _LAST_RETRIEVAL.clear()
-    _LAST_RETRIEVAL.update({"budget": budget, "chars": total,
-                            "fallback": not bool(out), "fields": per_field})
+    stats = {"budget": budget, "chars": total,
+             "fallback": not bool(out), "fields": per_field}
     if not out:  # nothing scored: full doc fallback (capped)
         out = [f"[Page {p.number}]\n{p.text}" for p in doc.pages if not p.sparse]
-        return "\n\n".join(out)[:100_000]
-    return "\n\n---\n\n".join(out)
-
-
-def re_words(s: str) -> list[str]:
-    return _re.findall(r"[A-Za-z]{4,}", s)
+        return "\n\n".join(out)[:100_000], stats
+    return "\n\n---\n\n".join(out), stats
 
 
 def _run_lm_pass(doc: Document, llm_fields: list[dict], results: dict,
                  model: str | None = None, tier: str = "small") -> None:
     """Single LLM pass over fields; ground each claim locally. Mutates results."""
-    context = _targeted_context(doc, llm_fields)
+    context, stats = _targeted_context(doc, llm_fields)
+    results["_retrieval"] = stats  # finalize moves this into meta
     user = "FIELDS:\n" + "\n".join(f"- {f['name']}: {f.get('hint', '')}" for f in llm_fields)
     user += "\n\nDOCUMENT:\n" + context
     try:
@@ -280,7 +275,8 @@ def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:
                         pdf_data, r["page_number"], r["verbatim"])
             except Exception:
                 pass
-    grounded = sum(1 for r in results.values() if r.get("grounded"))
+    grounded = sum(1 for r in results.values() if isinstance(r, dict) and r.get("grounded"))
+    stats = results.pop("_retrieval", None)
     meta: dict = {"format": doc.format, "pages": len(doc.pages),
                   "grounding_rate": f"{grounded}/{len(results)}"}
     try:
@@ -288,6 +284,6 @@ def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:
         meta["cost"] = _costs.total()
     except Exception:
         pass
-    if _LAST_RETRIEVAL:
-        meta["retrieval"] = dict(_LAST_RETRIEVAL)
+    if stats:
+        meta["retrieval"] = stats
     return {"fields": results, "meta": meta}

@@ -2,7 +2,7 @@
 
 Grounded document extraction. Every value ships with its **verbatim quote + page + bbox** — or it doesn't ship.
 
-<img src="samples/invoice_annotated.png" width="600" alt="Annotated extraction output">
+<img src="samples/golden/invoice_annotated.png" width="600" alt="Annotated extraction output">
 *Output of `-F "annotate=true"`: every cited value highlighted. Table rows cited per-cell.*
 
 ## Why a small model
@@ -73,14 +73,15 @@ Docker: `docker build -t qleric . && docker run -p 5000:5000 -e API_KEY=... qler
   },
   "meta": {"format": "PDF", "pages": 1, "grounding_rate": "4/8",
            "cost": {"calls": 1, "prompt_tokens": 1436,
-                    "completion_tokens": 179, "cost_usd": 0.000323}}
-}
+                    "completion_tokens": 179, "cost_usd": 0.000323},
+           "retrieval": {"budget": 12000, "chars": 1436, "fallback": false,
+                         "fields": {"seller": {"keys": 2, "windows": 1, "sent": 1}}}}
 ```
 
 Works with no keys: LLM fields return `value: null` + `note: "No API key..."`.
 Copy `example.env` → `.env` and add `API_KEY` to enable them. No hosted key, no signup.
 
-`-F "pack=resume|pii|contract"`, `-F "deep=true"` (LLM over all unmatched), `-F "annotate=true"` (highlighted PDF).
+`-F "pack=resume|pii|contract"`, `-F "deep=true"` (LLM over all unmatched — small pass only; local sections that miss stay missed, big tier still needs `escalate` + a miss), `-F "annotate=true"` (highlighted PDF).
 
 > `api.py` is a dev server. For anything networked: `gunicorn api:app` behind auth + reverse proxy — it spends your LLM key per request.
 Python: `from qleric import parse, query; query(parse(data, "pdf"), INVOICE_FIELDS)`.
@@ -102,7 +103,7 @@ No hosted key, no vendor SDK. Keys never logged, `.env` gitignored.
 | run | calls | tokens in/out | cost |
 |---|---|---|---|
 | 8 CUAD, luna-only (Nov 12) | 8 | 59,703 / 2,210 | $0.0103 |
-| 127 mixed, luna-only (Nov 11) | 127 | ~50k / ~19k | ~$0.01 |
+| 127 mixed, luna-only (Nov 11, pre-retrieval baseline) | 127 | ~50k / ~19k | ~$0.01 |
 | 90-case corpus, keyless (all runs) | 0 | 0 / 0 | $0 |
 | 5 CUAD escalation, sparse ctx (Nov 12) | 10 | 69,709 / 7,195 | $0.0851 — 0 additional closes |
 | 8 CUAD escalation, dense retrieval (Nov 13) | 16 | 37,854 / 7,566 | $0.0634 — termination 62→88%, non-compete →100% |
@@ -129,4 +130,4 @@ Misses feed back into the generator or pack anchors. No false grounds recorded t
 - `qleric/` — core: `documents` (parse), `grounding` (prove it), `local` (spans), `highlight` (bboxes), `lm` (BYOK), `costs` (ledger), `mcp` (tools)
 - `qleric/packs/` — `invoice`, `resume`, `pii`, `contract`
 - `evals/` — `generate.py`, `eval.py`, `validate_real.py`, `validate_cuad.py`, `real_truth.py` (your template)
-- `api.py` — stateless Flask; `samples/` — synthetic corpus + table proof
+- `api.py` — stateless Flask; `samples/golden/` — hand-checked demo docs; `samples/corpus/` — 90-case synthetic eval set (`real/` is gitignored private docs)

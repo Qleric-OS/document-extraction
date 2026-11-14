@@ -27,8 +27,7 @@ def main(path: str, pack: str, field: str, budget: int = 12000) -> None:
     except ValueError:
         doc = Document(format="TXT", pages=[Page(number=1, text=data.decode("utf-8", "replace"))])
     fld = next(f for f in PACKS[pack] if f["name"] == field)
-    ctx = core._targeted_context(doc, [fld], budget=budget)
-    stats = core._LAST_RETRIEVAL
+    ctx, stats = core._targeted_context(doc, [fld], budget=budget)
     print(f"field={field} keys={fld.get('retrieve') or 'hint-derived'}")
     print(f"stats={stats}")
     print("=" * 60)
