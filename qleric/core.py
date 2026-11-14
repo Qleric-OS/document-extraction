@@ -5,11 +5,13 @@ Regex survives only as span normalizer, never as extraction strategy.
 """
 from __future__ import annotations
 
+import os
 import re as _re
 
 from . import grounding, highlight, local
 from .documents import Document
 from .lm import LMError, chat
+from .local import TUNE
 SYSTEM = ("You are a precise document reader. Extract the requested fields. "
           "For each field return value, verbatim (exact substring from the text), "
           "and page_number (1-based). If not found, value is null.")
@@ -50,8 +52,19 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
           deep: bool = False) -> dict:
     """Run extraction. local/pii spans offline, LLM only for llm fields (or deep=True)."""
     results: dict[str, dict] = {}
+    _offline_pass(doc, fields, results)
+    llm_fields = [f for f in fields
+                  if f["name"] not in results
+                  and (deep or f.get("strategy", "llm") == "llm")]
+    _llm_pass(doc, llm_fields, results)
+    _backfill(fields, results)
+    return finalize(doc, results, pdf_data)
+
+
+def _offline_pass(doc: Document, fields: list[dict], results: dict) -> None:
+    """Keyless strategies: PII sweeps, local sections, tables, span assignment."""
     pending: list[dict] = []
-    for f in fields:  # offline pass: fuzzy spans + PII sweeps, no key needed
+    for f in fields:
         strategy = f.get("strategy", "llm")
         if strategy == "pii" and f.get("pattern"):
             from .packs.pii import EXCLUDE
@@ -73,11 +86,7 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
             continue
         if strategy == "local" and f.get("section"):
             stops = [x for x in fields if x.get("section")] or None
-            span = local.find_section(doc.body_text, f.get("anchors", []),
-                                      member=f.get("member"), heading=f.get("heading"),
-                                      exclude=f.get("exclude"), stop_fields=stops,
-                                      qualify=f.get("qualify"),
-                                      reassemble=f.get("reassemble", True))
+            span = local.find_section(doc.body_text, f, stop_fields=stops)
             if span:
                 value = local.normalize(f.get("normalize"), span, f.get("strip"))
                 hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
@@ -95,77 +104,84 @@ def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
         if strategy == "local":
             pending.append(f)
 
-    if pending:  # global best-assignment: highest score claims each span first
-        scored: list[tuple[float, str, str]] = []  # (score, field, span)
-        for f in pending:
-            if f.get("match_first") and f.get("normalize"):
-                best = local.find_span(doc.body_text, f.get("anchors", []),
-                                       pattern=f.get("normalize"), match_first=True,
-                                       reject=f.get("reject"))
-                if best:
-                    v0 = local.normalize(f.get("normalize"), best, f.get("strip"))
-                    rej = f.get("reject")
-                    if v0 is not None and not (rej and _re.search(rej, v0, _re.IGNORECASE)):
-                        scored.append((101.0, f["name"], best))
-                continue
-            for span in local.candidates(doc.body_text):
-                s = local.score(span, f.get("anchors", []))
-                norm = f.get("normalize")
-                if norm and _re.search(norm, span, _re.IGNORECASE):
-                    if f.get("value_first"):
-                        # distinctive shape admits the span; anchors decide rank
-                        s = max(s, 41.0) + 15.0
-                    elif s > 30.0:
-                        s += 40.0  # anchor-proximate value: paragraph-embedded dates/law
-                if _re.match(r"\s*\d+\.\s+[A-Z][A-Z \-/&]+", span):
-                    s += 25.0  # numbered section heading in span: clause authority
-                for h in f.get("headings", []):
-                    if h.lower() in span.lower():
-                        s += 50.0  # field's own section heading present: strongest signal
-                        break
-                if s > 55.0:
-                    scored.append((s, f["name"], span))
-        scored.sort(reverse=True)
-        claimed_values: set[str] = set()
-        for _, name, span in scored:
-            if name in results:
-                continue
-            f = next(x for x in pending if x["name"] == name)
-            value = local.normalize(f.get("normalize"), span, f.get("strip"))
-            if value is None:
-                continue  # anchor matched but no value present (template/placeholder)
-            rej = f.get("reject")
-            if rej and _re.search(rej, value, _re.IGNORECASE):
-                continue  # known trap shape (year range as phone): skip span
-            if value in claimed_values:
-                continue  # same value already claimed by a higher scorer
-            hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
-            results[name] = {"value": value, "verbatim": span.strip(),
-                             **hit, "grounded": True, "source": "local"}
-            claimed_values.add(value)
-    llm_fields = [f for f in fields
-                  if f["name"] not in results
-                  and (deep or f.get("strategy", "llm") == "llm")]
-    if llm_fields:  # Small model first; escalate flagged fields that miss or unground
-        _run_lm_pass(doc, llm_fields, results, model=None)
-        big_fields = [f for f in llm_fields if f.get("escalate")
-                      and not results.get(f["name"], {}).get("grounded")]
-        if big_fields:
-            import os as _os
-            big_model = _os.getenv("MODEL_BIG", "")
-            if big_model:
-                _run_lm_pass(doc, big_fields, results, model=big_model, tier="big")
-    else:  # keyless local-only: report misses honestly
-        for f in fields:
-            results.setdefault(f["name"], {"value": None, "grounded": False,
-                                           "source": f.get("strategy", "llm"),
-                                           "note": "no local match; needs LLM (deep=true or key)"})
-    for f in fields:  # backfill: every declared field appears in output
+    _assign_spans(doc, pending, results)
+
+
+def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
+    """Global best-assignment: highest score claims each span first."""
+    if not pending:
+        return
+    scored: list[tuple[float, str, str]] = []  # (score, field, span)
+    for f in pending:
+        if f.get("match_first") and f.get("normalize"):
+            best = local.find_span(doc.body_text, f.get("anchors", []),
+                                   pattern=f.get("normalize"), match_first=True,
+                                   reject=f.get("reject"))
+            if best:
+                v0 = local.normalize(f.get("normalize"), best, f.get("strip"))
+                rej = f.get("reject")
+                if v0 is not None and not (rej and _re.search(rej, v0, _re.IGNORECASE)):
+                    scored.append((TUNE["match_first_score"], f["name"], best))
+            continue
+        for span in local.candidates(doc.body_text):
+            s = local.score(span, f.get("anchors", []))
+            norm = f.get("normalize")
+            if norm and _re.search(norm, span, _re.IGNORECASE):
+                if f.get("value_first"):
+                    # distinctive shape admits the span; anchors decide rank
+                    s = max(s, TUNE["value_first_floor"]) + TUNE["value_first_bonus"]
+                elif s > TUNE["proximity_floor"]:
+                    s += TUNE["proximity_boost"]  # anchor-proximate value
+            if _re.match(r"\s*\d+\.\s+[A-Z][A-Z \-/&]+", span):
+                s += TUNE["heading_bonus"]  # numbered section heading in span
+            for h in f.get("headings", []):
+                if h.lower() in span.lower():
+                    s += TUNE["headings_bonus"]  # field's own section heading
+                    break
+            if s > TUNE["span_threshold"]:
+                scored.append((s, f["name"], span))
+    scored.sort(reverse=True)
+    claimed_values: set[str] = set()
+    for _, name, span in scored:
+        if name in results:
+            continue
+        f = next(x for x in pending if x["name"] == name)
+        value = local.normalize(f.get("normalize"), span, f.get("strip"))
+        if value is None:
+            continue  # anchor matched but no value present (template/placeholder)
+        rej = f.get("reject")
+        if rej and _re.search(rej, value, _re.IGNORECASE):
+            continue  # known trap shape (year range as phone): skip span
+        if value in claimed_values:
+            continue  # same value already claimed by a higher scorer
+        hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
+        results[name] = {"value": value, "verbatim": span.strip(),
+                         **hit, "grounded": True, "source": "local"}
+        claimed_values.add(value)
+
+def _llm_pass(doc: Document, llm_fields: list[dict], results: dict) -> None:
+    """Small model first; escalate flagged fields that miss or unground."""
+    if not llm_fields:
+        return  # keyless local-only; _backfill writes the honest notes
+    _run_lm_pass(doc, llm_fields, results, model=None)
+    big_fields = [f for f in llm_fields if f.get("escalate")
+                  and not results.get(f["name"], {}).get("grounded")]
+    if big_fields:
+        big_model = os.getenv("MODEL_BIG", "")
+        if big_model:
+            _run_lm_pass(doc, big_fields, results, model=big_model, tier="big")
+
+
+def _backfill(fields: list[dict], results: dict) -> None:
+    """Every declared field appears in output; unmatched get honest notes."""
+    for f in fields:
         if f["name"] not in results:
+            if f.get("strategy", "llm") == "llm":
+                note = "no local match; needs LLM (deep=true or key)"
+            else:
+                note = "no match at any tier"
             results[f["name"]] = {"value": None, "grounded": False,
-                                  "source": f.get("strategy", "llm"),
-                                  "note": "no match at any tier"}
-    return finalize(doc, results, pdf_data)
+                                  "source": f.get("strategy", "llm"), "note": note}
 
 
 _LAST_RETRIEVAL: dict = {}  # per-query retrieval stats, surfaced in meta.retrieval

@@ -15,16 +15,33 @@ except ImportError:  # fallback: exact-word overlap only
     fuzz = None
 
 
+# All tunables in one place. Pack fields may override threshold via
+# "threshold" key; everything else is global.
+TUNE = {
+    "span_threshold": 55.0,      # min anchor score to claim a span
+    "proximity_floor": 30.0,     # anchor score that admits pattern boost
+    "proximity_boost": 40.0,     # paragraph-embedded value bonus
+    "value_first_floor": 41.0,   # distinctive shape admission floor
+    "value_first_bonus": 15.0,   # ranking bonus on top of floor
+    "heading_bonus": 25.0,       # numbered section heading in span
+    "headings_bonus": 50.0,      # field's own section heading present
+    "match_first_score": 101.0,  # self-identifying pattern direct hit
+    "stop_threshold": 60.0,      # rival-heading stop line
+    "long_line": 160,            # paragraph-embedded split threshold
+    "min_window": 15,            # shortest clause window kept
+    "anchor_similarity": 30.0,   # match_first anchored preference floor
+}
+
 def candidates(text: str) -> list[str]:
     """Candidate spans: lines, 2-line windows, and clause windows for long lines."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     spans = list(lines)
     spans += [" ".join(lines[i:i + 2]) for i in range(len(lines) - 1)]
     for ln in lines:
-        if len(ln) > 160:  # paragraph-embedded values: split on clause boundaries
-            for part in re.split(r";|\(|\)|, the |, and |\. ", ln):
+        if len(ln) > TUNE["long_line"]:  # paragraph-embedded values: split on clause boundaries
+            for part in re.split(r";|\(|\)|, the |, and |(?<!\d)\. ", ln):
                 part = part.strip()
-                if len(part) > 15:
+                if len(part) > TUNE["min_window"]:
                     spans.append(part)
     return spans
 
@@ -75,25 +92,22 @@ def find_span(text: str, anchors: list[str], threshold: float = 55.0,
             best, best_score = span, s
     return best
 
-def find_section(text: str, anchors: list[str], threshold: float = 55.0,
-                 stop_anchors: list[str] | None = None,
-                 member: str | None = None,
-                 heading: str | None = None,
-                 exclude: str | None = None,
-                 stop_fields: list[dict] | None = None,
-                 qualify: str | None = None,
-                 reassemble: bool = True) -> str | None:
+def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
+                 stop_fields: list[dict] | None = None) -> str | None:
     """Section body: heading + contiguous lines until a rival heading,
     plus doc-wide reassembly of member-pattern lines (shuffle-proof).
 
-    heading: regex a line must match to START a section (numbered/article/
-    lettered shapes). Without it, any high anchor score starts.
-    exclude: regex disqualifying false friends (e.g. 'Termination Agreement'
-    as a document title, not a section).
-    stop_fields: pack fields whose anchors form the rival-heading set.
-    member collects scattered body lines wherever shuffle put them.
-    qualify: regex the assembled value must contain, else None (wrong section).
+    Reads everything from the field dict: anchors, threshold, member,
+    heading, exclude, qualify, reassemble. Only stop anchors stay external
+    (they depend on sibling fields, not this one).
     """
+    anchors = field.get("anchors", [])
+    threshold = field.get("threshold", TUNE["span_threshold"])
+    member = field.get("member")
+    heading = field.get("heading")
+    exclude = field.get("exclude")
+    qualify = field.get("qualify")
+    reassemble = field.get("reassemble", True)
     if stop_anchors is None:
         if stop_fields is None:
             from .packs import RESUME_FIELDS  # legacy default
@@ -103,10 +117,10 @@ def find_section(text: str, anchors: list[str], threshold: float = 55.0,
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     starts: list[tuple[int, str]] = [(i, ln) for i, ln in enumerate(lines)]
     for i, ln in enumerate(lines):  # paragraph-embedded headings: clause windows can start
-        if len(ln) > 160:
+        if len(ln) > TUNE["long_line"]:
             for part in re.split(r";|\(|\)|, the |, and |(?<!\d)\. ", ln):
                 part = part.strip()
-                if len(part) > 15:
+                if len(part) > TUNE["min_window"]:
                     starts.append((i, part))  # origin line index preserves doc order
     cands: list[tuple[tuple[int, float], int, str]] = []
     for pos, (origin, ln) in enumerate(starts):
@@ -133,7 +147,7 @@ def find_section(text: str, anchors: list[str], threshold: float = 55.0,
         for i, ln in enumerate(lines):
             if i <= origin:
                 continue  # heading line itself; body follows (or window covers it)
-            if score(ln, stop_anchors) > 60.0 and score(ln, anchors) <= score(ln, stop_anchors):
+            if score(ln, stop_anchors) > TUNE["stop_threshold"] and score(ln, anchors) <= score(ln, stop_anchors):
                 break  # a different section starts
             body.append(ln)
         if member:
