@@ -196,9 +196,19 @@ def resolve_reference(text: str, span: str, field: dict, window: int = 800) -> s
     clean = field.get("clean")
     if clean is not None:
         try:
-            return clean(best)
+            cleaned = clean(best)
         except Exception:
             return None
+        if cleaned is None:
+            return None
+        # resolved antecedent must look like a proper-noun phrase, not prose:
+        # 1-4 words, each capitalized or a small connector (of/and/the/de/la)
+        words = cleaned.split()
+        connectors = {"of", "and", "the", "de", "la", "di", "du", "der", "van", "von"}
+        if not (1 <= len(words) <= 4) or not all(
+                w[0].isupper() or w.lower().strip(".,") in connectors for w in words if w):
+            return None
+        return cleaned
     return best
 
 

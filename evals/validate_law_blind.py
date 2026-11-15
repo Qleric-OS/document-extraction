@@ -44,8 +44,8 @@ def main(n: int = 20, seed: int = 7) -> None:
     methods: dict[str, int] = {}
     for r in sample:
         exp = (r.get("Governing Law-Answer") or "").strip()
-        if not exp or exp == "[]" or "[*" in exp:
-            continue  # redacted/unanswerable truth
+        if (not exp or exp == "[]" or "[*" in exp or "WHICH" in exp.upper()):
+            continue  # redacted / template-variable truth: ungradeable
         stem = r["Filename"].rsplit(".", 1)[0]
         txtdir = os.path.join(CUAD, "full_contract_txt")
         exact = stem + ".txt"

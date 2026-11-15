@@ -38,7 +38,18 @@ def clean_jurisdiction(raw: str | None) -> str | None:
     """Trim a captured jurisdiction: cut suffixes, keep multi-word wholes."""
     if not raw:
         return None
+    aliases = {"prc": "People's Republic of China", "usa": "United States",
+               "uk": "United Kingdom", "u.s.": "United States", "u.k.": "United Kingdom"}
+    demonyms = {"italian": "Italy", "english": "England", "french": "France",
+                "german": "Germany", "spanish": "Spain", "dutch": "Netherlands",
+                "chinese": "China", "japanese": "Japan", "canadian": "Canada",
+                "australian": "Australia", "indian": "India", "brazilian": "Brazil",
+                "mexican": "Mexico", "russian": "Russia", "israeli": "Israel"}
     g = _re.sub(r"\s*[,;].*$", "", raw).strip()
+    if g.lower().strip(" .") in aliases:
+        return aliases[g.lower().strip(" .")]
+    if g.lower().strip(" .") in demonyms:
+        return demonyms[g.lower().strip(" .")]
     parts = g.split()
     while parts and parts[0].lower() in ("and", "construed", "governed"):
         parts.pop(0)
@@ -58,7 +69,23 @@ def clean_jurisdiction(raw: str | None) -> str | None:
         if piece.lower().strip(".,") in _JUR_STOP:
             break
         out.append(piece)
-    return " ".join(out) or None
+    val = " ".join(out)
+    if not val:
+        return None
+    # proper-noun shape: every word capitalized or a small connector;
+    # kills "ECOPETROL found in", lone "that"/"any", stray verbs
+    connectors = {"of", "and", "the", "de", "la", "du", "der", "van", "von",
+                  "di", "da", "le", "les", "el", "al"}
+    for w in val.split():
+        core = w.strip(".,;:()\"'")
+        if not core:
+            continue
+        if core[0].isupper() or "'" in core or core.lower().startswith("mc"):
+            continue
+        if core.lower() in connectors:
+            continue
+        return None
+    return val
 
 
 FIELDS = [
@@ -81,7 +108,9 @@ FIELDS = [
          r"(?:laws?\s+of)\s+(?:(?:the|internal|exclusive|substantive)\s+)?(?:(?:State|Province|Commonwealth)\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of|and|the|[A-Z][A-Za-z'\u2019\-]*)){0,3})",
          r"governed\s+by\s+(?:and\s+)?construed\s+[^\n,;]{0,60}?laws?\s+of\s+(?:(?:the|internal|exclusive|substantive)\s+)?(?:(?:State|Province|Commonwealth)\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of|and|the|[A-Z][A-Za-z'\u2019\-]*)){0,3})",
          r"construed\s+[^\n,;]{0,60}?laws?\s+of\s+(?:(?:the|internal|exclusive|substantive)\s+)?(?:(?:State|Province|Commonwealth)\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of|and|the|[A-Z][A-Za-z'\u2019\-]*)){0,3})",
+        r"subject\s+to\s+(?:the\s+)?(?:application\s+of\s+)?(?:the\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of\s+)?[A-Z][A-Za-z'\u2019\-]*){0,2})\s+[Ll]aw\b",
      ],
+    "reject": r"(respective jurisdiction|any\s+(country|governmental authority)|any\s+other|this\s+or\s+any|such\s+jurisdiction|^any$)",
      "clean": clean_jurisdiction,
      "strip": ["and", "the", "of", "federal", "as"],
      "value_first": True,
