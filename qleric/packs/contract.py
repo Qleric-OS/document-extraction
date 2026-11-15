@@ -33,6 +33,21 @@ _JUR_STOP = frozenset({
     "commonwealth", "district", "republic",
 })
 
+_STATE_WORDS = ("state", "province", "commonwealth", "district", "republic", "federal")
+
+
+def _ed1(a: str, b: str) -> bool:
+    """One insertion, deletion, or substitution apart (typo/OCR tolerance)."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        return sum(1 for x, y in zip(a, b) if x != y) == 1
+    short, long = (a, b) if la < lb else (b, a)
+    return any(short == long[:i] + long[i + 1:] for i in range(len(long)))
+
 
 def clean_jurisdiction(raw: str | None) -> str | None:
     """Trim a captured jurisdiction: cut suffixes, keep multi-word wholes."""
@@ -64,6 +79,14 @@ def clean_jurisdiction(raw: str | None) -> str | None:
             cand = " ".join(parts[:length])
             if cand.lower() in low:
                 return low[cand.lower()]
+    # "State of X" the patterns didn't consume (typo: "Sate of Colorado"):
+    # drop the state-word, keep the jurisdiction.
+    if (len(parts) >= 3 and parts[1].lower() == "of"
+             and (parts[0].lower() in _STATE_WORDS
+                  or (len(parts[0]) >= 3 and any(_ed1(parts[0].lower(), s) for s in _STATE_WORDS)))):
+         parts = parts[2:]
+         if not parts:
+             return None
     out = []
     for piece in parts:
         if piece.lower().strip(".,") in _JUR_STOP:
@@ -105,12 +128,15 @@ FIELDS = [
      "normalize": r"(?:laws?\s+of)\s+(?:the\s+)?((?:Federal\s+)?Republic\s+of\s+[A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
      "normalize_alt": [
          r"governed\s+by\s+(?:the\s+)?(?!(?i:the|substantive|applicable|internal|exclusive|federal|such)\b)((?-i:[A-Z])[A-Za-z'\u2019\-]*(?:\s+(?:of\s+)?[A-Z][A-Za-z'\u2019\-]*){0,2})\s+laws?\b",
+         r"laws?\s+of\s+(?:the\s+)?United\s+States(?:\s+of\s+America)?\s+and\s+of\s+the\s+(?:State|Commonwealth)\s+of\s+([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,1})",
+         r"laws?\s+of\s+the\s+(?:State|Commonwealth)\s+of\s+([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,1})\s+and\s+of\s+(?:the\s+)?United\s+States",
          r"(?:laws?\s+of)\s+(?:(?:the|internal|exclusive|substantive)\s+)?(?:(?:State|Province|Commonwealth)\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of|and|the|[A-Z][A-Za-z'\u2019\-]*)){0,3})",
          r"governed\s+by\s+(?:and\s+)?construed\s+[^\n,;]{0,60}?laws?\s+of\s+(?:(?:the|internal|exclusive|substantive)\s+)?(?:(?:State|Province|Commonwealth)\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of|and|the|[A-Z][A-Za-z'\u2019\-]*)){0,3})",
          r"construed\s+[^\n,;]{0,60}?laws?\s+of\s+(?:(?:the|internal|exclusive|substantive)\s+)?(?:(?:State|Province|Commonwealth)\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of|and|the|[A-Z][A-Za-z'\u2019\-]*)){0,3})",
         r"subject\s+to\s+(?:the\s+)?(?:application\s+of\s+)?(?:the\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of\s+)?[A-Z][A-Za-z'\u2019\-]*){0,2})\s+[Ll]aw\b",
          r"courts?\s+(?:located\s+)?in\s+[A-Z][A-Za-z'\u2019\-]*\s*,\s*([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
          r"jurisdiction\s+and\s+venue\s+(?:shall\s+be\s+)?in\s+[A-Z][A-Za-z'\u2019\-]*\s*,\s*([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
+         r"(?:arbitrat\w+|disput\w+).{0,100}?\bin\s+[A-Z][A-Za-z'\u2019\-]*\s*,\s*([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
      ],
     "reject": r"(respective jurisdiction|any\s+(country|governmental authority)|any\s+other|this\s+or\s+any|such\s+jurisdiction|^any$)",
      "clean": clean_jurisdiction,
@@ -118,7 +144,7 @@ FIELDS = [
      "value_first": True,
      "headings": ["governing law"],
     "couple": [r"governed\s+by.{0,80}?laws?\s+of", r"laws?\s+of\s+(?:the\s+)?(?:State|Province|Commonwealth|District|Republic)\s+of"],
-    "demote": [r"incorporat\w*", r"\borganiz\w+", r"formed\s+under", r"principal\s+place", r"\baddress\b", r"notice\s+(address|to)", r"for\s+all\s+purposes"],
+     "demote": [r"incorporat\w*", r"\borganiz\w+", r"formed\s+under", r"principal\s+place", r"\baddress\b", r"notice\s+(address|to)", r"for\s+all\s+purposes", r"export\s+(control|laws|compliance)", r"import\s+laws"],
     "resolve": {"triggers": [r"thereof", r"thereunder", r"therein"],
                 "patterns": [r"(?:in|of)\s+the\s+State\s+of\s+([A-Z][a-z]+(?: [A-Z][a-z]+){0,2})"]}},
     {"name": "termination_for_convenience", "strategy": "local", "section": True,
