@@ -59,7 +59,8 @@ def clean_jurisdiction(raw: str | None) -> str | None:
                 "german": "Germany", "spanish": "Spain", "dutch": "Netherlands",
                 "chinese": "China", "japanese": "Japan", "canadian": "Canada",
                 "australian": "Australia", "indian": "India", "brazilian": "Brazil",
-                "mexican": "Mexico", "russian": "Russia", "israeli": "Israel"}
+                 "mexican": "Mexico", "russian": "Russia", "israeli": "Israel",
+                 "colombian": "Colombia"}
     g = _re.sub(r"\s*[,;].*$", "", raw).strip()
     if g.lower().strip(" .") in aliases:
         return aliases[g.lower().strip(" .")]
@@ -108,7 +109,7 @@ def clean_jurisdiction(raw: str | None) -> str | None:
         if core.lower() in connectors:
             continue
         return None
-    return val
+    return val.title() if val.isupper() else val
 
 
 FIELDS = [
@@ -134,9 +135,10 @@ FIELDS = [
          r"governed\s+by\s+(?:and\s+)?construed\s+[^\n,;]{0,60}?laws?\s+of\s+(?:(?:the|internal|exclusive|substantive)\s+)?(?:(?:State|Province|Commonwealth)\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of|and|the|[A-Z][A-Za-z'\u2019\-]*)){0,3})",
          r"construed\s+[^\n,;]{0,60}?laws?\s+of\s+(?:(?:the|internal|exclusive|substantive)\s+)?(?:(?:State|Province|Commonwealth)\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of|and|the|[A-Z][A-Za-z'\u2019\-]*)){0,3})",
         r"subject\s+to\s+(?:the\s+)?(?:application\s+of\s+)?(?:the\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+(?:of\s+)?[A-Z][A-Za-z'\u2019\-]*){0,2})\s+[Ll]aw\b",
-         r"courts?\s+(?:located\s+)?in\s+[A-Z][A-Za-z'\u2019\-]*\s*,\s*([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
-         r"jurisdiction\s+and\s+venue\s+(?:shall\s+be\s+)?in\s+[A-Z][A-Za-z'\u2019\-]*\s*,\s*([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
-         r"(?:arbitrat\w+|disput\w+).{0,100}?\bin\s+[A-Z][A-Za-z'\u2019\-]*\s*,\s*([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
+         r"(?:regulations|rules)\s+of\s+([A-Z][A-Za-z'\u2019\-]*)\s+private\s+law\b",
+         r"courts?\s+(?:located\s+)?in\s+[A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2}\s*,\s*(?:the\s+)?(?:state\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
+         r"jurisdiction\s+and\s+venue\s+(?:shall\s+be\s+)?in\s+[A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2}\s*,\s*(?:the\s+)?(?:state\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
+         r"(?:arbitrat\w+|disput\w+).{0,100}?\bin\s+[A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2}\s*,\s*(?:the\s+)?(?:state\s+of\s+)?([A-Z][A-Za-z'\u2019\-]*(?:\s+[A-Z][A-Za-z'\u2019\-]*){0,2})",
      ],
     "reject": r"(respective jurisdiction|any\s+(country|governmental authority)|any\s+other|this\s+or\s+any|such\s+jurisdiction|^any$)",
      "clean": clean_jurisdiction,
