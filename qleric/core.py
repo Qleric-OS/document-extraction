@@ -9,7 +9,7 @@ import os
 import re as _re
 from . import grounding, highlight, local
 from .documents import Document
-from .lm import DEFAULT_BIG_MODEL, LMError, chat
+from .lm import DEFAULT_BIG_MODEL, LMError, chat, has_key
 from .local import TUNE
 from .packs.pii import EXCLUDE
 SYSTEM = ("You are a precise document reader. Extract the requested fields. "
@@ -49,8 +49,15 @@ def _schema_hint(fields: list[dict]) -> str:
 
 
 def query(doc: Document, fields: list[dict], pdf_data: bytes | None = None,
-          deep: bool = False) -> dict:
-    """Run extraction. local/pii spans offline, LLM only for llm fields (or deep=True)."""
+          deep: bool | None = None) -> dict:
+    """Run extraction. local/pii spans offline, LLM only for llm fields.
+
+    deep=None (default) is auto: the small tier fills gaps and the big tier
+    escalates failures whenever a key is present; without a key the call is
+    pure keyless. Pass deep=False to force keyless, deep=True to force it.
+    """
+    if deep is None:
+        deep = has_key()
     results: dict[str, dict] = {}
     _offline_pass(doc, fields, results)
     llm_fields = [f for f in fields
@@ -295,10 +302,15 @@ def _run_lm_pass(doc: Document, llm_fields: list[dict], results: dict,
             results[f["name"]] = {"value": value, "verbatim": verbatim,
                                   **hit, "grounded": True, "source": f"llm-{tier}"}
         else:
-            if tier == "big" or f["name"] not in results:
-                results[f["name"]] = {"value": value, "verbatim": verbatim,
-                                      "grounded": False, "source": f"llm-{tier}",
-                                      "page_number": item.get("page_number")}
+            # Unverified guesses never ship as values: grounded or null.
+            # The model's verbatim stays for audit; verdicts and downstream
+            # consumers only ever see verified claims.
+            if tier == "big" and results.get(f["name"], {}).get("grounded"):
+                continue  # big never clobbers a verified answer with a guess
+            results[f["name"]] = {"value": None, "verbatim": verbatim,
+                                  "grounded": False, "source": f"llm-{tier}",
+                                  "note": "unverified model output nulled",
+                                  "page_number": item.get("page_number")}
 
 
 def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:

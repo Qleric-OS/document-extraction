@@ -109,7 +109,7 @@ def smoke() -> int:
             buf = io.BytesIO()
             doc.save(buf)
             pdf = buf.getvalue()
-            res = query(parse(pdf, "pdf"), fields, pdf)
+            res = query(parse(pdf, "pdf"), fields, pdf, deep=False)  # smoke is keyless by design
             assert "fields" in res and "meta" in res
             assert "cost" in res["meta"]
             if any(f.get("strategy", "llm") == "llm" for f in fields):

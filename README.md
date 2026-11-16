@@ -116,8 +116,8 @@ Seeded synthetic corpus (`evals/generate.py`) + private real-doc validation:
 | suite | result |
 |---|---|
 | 105 synthetic (invoice / resume / PII / contract) | 100% offline fields incl. 15 governing-law cases with incorporation decoys, 0 false grounds |
- | 537-case synthetic corpus, key live (Nov 16) | **535/537** (luna on llm-strategy fields), 0 false grounds, 0 errors; keyless-only baseline 400/537 — only invoice.seller misses (28/30) |
- | CUAD contracts (public clause truth) | agreement 58%, law **94/97 keyless on 100 unseen (97%, blind seed 7)** renewal 71%, exclusivity 58%, MFN 83%, non-compete 100%, termination-for-convenience **71/96 keyless blind (74%, seed 7)** vs 64% majority, **85/96 (89%) with luna second pass, FN zero**; inferred dates nulled. Yes/No flags grade correct nulls as hits |
+ | 537-case corpus, key live (Nov 16) | **535/537** (luna on llm-strategy fields), 0 false grounds, 0 errors; keyless-only baseline 400/537 — only invoice.seller misses (28/30) |
+ | CUAD contracts (public clause truth) | agreement 58%, law **94/97 keyless on 100 unseen (97%, blind seed 7)** renewal 71%, exclusivity 58%, MFN 83%, non-compete 100%, termination-for-convenience **71/96 keyless blind (74%, seed 7)** vs 64% majority; luna pass varies 65–85 by sampling (model rejects temp/seed) — no reliable lift, ambiguities need review; inferred dates nulled. Yes/No flags grade correct nulls as hits |
 | your docs (`python -m evals.validate_real`) | real CVs: 100% offline. Drop PDFs in `samples/real/` + truth in `evals/real_truth_local.py` — both gitignored, nothing leaves your machine |
 
 Misses feed back into the generator or pack anchors. No false grounds recorded to date.

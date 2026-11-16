@@ -91,7 +91,7 @@ def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = 
             skipped += 1
             continue
         os.environ["QLERIC_DEBUG"] = "1"
-        res = query(doc, [field], None)
+        res = query(doc, [field], None, deep=False)  # blind protocol is keyless by design
         got = res["fields"].get(field_name) or {}
         val = got.get("value")
         if flag:

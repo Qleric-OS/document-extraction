@@ -23,6 +23,13 @@ class LMError(RuntimeError):
 DEFAULT_MODEL = "gpt-6-luna"
 DEFAULT_BIG_MODEL = "gpt-6.1-sol"
 
+
+def has_key() -> bool:
+    """An LLM key is available: the ladder can engage without spending surprises."""
+    import os as _os
+    return bool(_os.getenv("API_KEY", "") or _os.getenv("OPENAI_API_KEY", "")
+                or _os.getenv("ANTHROPIC_API_KEY", ""))
+
 # Legacy reasoning models needing a special payload (no response_format,
 # no system role). GPT-6 family takes the standard path.
 _REASONING_PREFIXES = ("o1", "o3", "o4", "gpt-5")
