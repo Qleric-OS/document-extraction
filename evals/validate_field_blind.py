@@ -110,8 +110,9 @@ def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = 
         method = ("resolve:" if got.get("resolved_reference") else "") + (mech or got.get("source", "null"))
         methods[method] = methods.get(method, 0) + 1
         mark = "Y" if hit else "n"
+        flat = str(val).replace(chr(10), " ")[:28]
         print(f"| {r['Filename'][:38]} | {exp[:28]} | "
-              f"{str(val)[:28]} | {mark} | {method} |")
+              f"{flat} | {mark} | {method} |")
     print()
     print(f"BLIND {field_name}: {hits}/{total} = {hits/max(total,1):.2f} "
           f"(skipped={skipped}), methods={methods}")

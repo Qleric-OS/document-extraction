@@ -86,6 +86,32 @@ def find_span(text: str, anchors: list[str], pattern: str,
             return s
     return None
 
+def _sentences(val: str) -> list[str]:
+    """Split a section into sentences: newlines, semicolons, non-numeric periods."""
+    parts = re.split(r"\n+|;|(?<!\d)\.\s+", val)
+    return [p.strip(" .") for p in parts if len(p.strip(" .")) > 3]
+
+
+def _has_grant(val: str, qualify, strong, disqualify) -> bool:
+    """A granting sentence names termination + a convenience marker, no disqualifier.
+
+    Sentence scope stops tail boilerplate ("termination for any reason shall
+    not release...") from masquerading as a grant, and stops effects-adjacent
+    text from poisoning a real grant elsewhere in the section.
+    """
+    for s in _sentences(val):
+        if not re.search(r"terminat\w*", s, re.IGNORECASE):
+            continue
+        marked = (strong and re.search(strong, s, re.IGNORECASE)) or (
+            qualify and re.search(qualify, s, re.IGNORECASE))
+        if not marked:
+            continue
+        if disqualify and re.search(disqualify, s, re.IGNORECASE):
+            continue
+        return True
+    return False
+
+
 def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
                  stop_fields: list[dict] | None = None) -> str | None:
     """Section body: heading + contiguous lines until a rival heading,
@@ -101,6 +127,8 @@ def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
     heading = field.get("heading")
     exclude = field.get("exclude")
     qualify = field.get("qualify")
+    strong = field.get("qualify_strong")
+    disqualify = field.get("disqualify")
     reassemble = field.get("reassemble", True)
     if stop_anchors is None:
         if stop_fields is None:
@@ -158,7 +186,9 @@ def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
                 order = {ln: i for i, ln in enumerate(lines)}
                 body.sort(key=lambda ln: order.get(ln, 0))
         val = "\n".join([span, *body]) if body else span
-        if qualify and not re.search(qualify, val, re.IGNORECASE):
+        if disqualify and not _has_grant(val, qualify, strong, disqualify):
+            continue  # no granting sentence: conditional/cause/effects only
+        if not disqualify and qualify and not re.search(qualify, val, re.IGNORECASE):
             continue  # right shape, wrong substance: try next heading
         return val
     return None

@@ -158,6 +158,8 @@ FIELDS = [
      "reassemble": False,
      "member": r"(?i)\bterminat\w*\b.*\b(notice|days|written|convenience|without cause|sole discretion|at any time)\b",
      "qualify": r"(?i)(convenience|without cause|at its option|sole discretion|at any time|for any reason)",
+     "qualify_strong": r"(?i)(convenience|without cause|for any reason|at (its )?will|for no reason)",
+     "disqualify": r"(?i)(effects?\s+of\s+terminat|consequences?\s+of|surviv\w*|for\s+cause|terminat\w+\s+(for|upon).{0,40}?(breach|default)|breach.{0,40}?terminat|insolven|deadlock|disagre|exercis\w*\s+\w+\s+decision|decision[\s-]making|failure\s+to\s+(agree|cure|perform|pay)|cure\s+period)",
      "normalize": None,
      "retrieve": ["terminat", "convenience", "without cause", "30 days", "written notice"]},
     {"name": "renewal_term", "strategy": "local", "section": True,
