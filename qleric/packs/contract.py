@@ -112,6 +112,45 @@ def clean_jurisdiction(raw: str | None) -> str | None:
     return val.title() if val.isupper() else val
 
 
+_NUM_WORDS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+              "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+              "twelve": "12", "twenty": "20", "thirty": "30",
+              "forty": "40", "sixty": "60", "ninety": "90"}
+
+
+def _tidy_period(v: str | None) -> str | None:
+    """Canonicalize a captured renewal region; truths favor digits ("12 months")."""
+    if not v:
+        return None
+    v = v.replace("-", " ")
+    v = _re.sub(r"\s+(terms?|periods?)\s*$", "", v, flags=_re.I).strip()
+    if _re.fullmatch(r"(?i)\s*perpetu\w*\s*", v):
+        return "perpetual"
+    m = _re.search(r"(?i)\b(successive\s+)?(one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty|thirty|forty|sixty|ninety|\d+)(?:\s*\(\d+\))?\s*(years?|months?|days?)\b", v)
+    if not m:
+        return None
+    succ, num, unit = m.group(1), m.group(2), m.group(3)
+    pre = _re.search(r"(?i)\b(\w+)\s+successive\b", v)
+    cnt = None
+    if pre and pre.group(1).lower() not in ("for", "of", "and", "the", "to", "in", "on",
+                                             "a", "an", "per", "each", "or", "nor", "successive"):
+        cnt = pre.group(1)
+    num = _NUM_WORDS.get(num.lower(), num)
+    base = "year" if unit.lower().startswith("year") else ("month" if unit.lower().startswith("month") else "day")
+    unit = base if num == "1" else base + "s"
+    parts = ([cnt] if cnt else []) + ([succ.strip()] if succ else []) + [f"{num} {unit}"]
+    return " ".join(parts).strip() or None
+
+
+def clean_renewal(raw: str | None) -> str | None:
+    """Extract a renewal period from a capture, or None (initial-term-only sections null out)."""
+    if not raw:
+        return None
+    if _re.fullmatch(r"(?i)\s*perpetu\w*\s*", raw):
+        return "perpetual"
+    return _tidy_period(raw)
+
+
 FIELDS = [
     {"name": "agreement_date", "strategy": "local", "hint": "date the agreement was signed",
      "anchors": ["agreement date", "dated as of", "dated", "date of agreement",
@@ -169,9 +208,14 @@ FIELDS = [
      "heading": None,
      "exclude": None,
      "reassemble": False,
-     "member": r"(?i)\brenew\w*\b.*\b(successive|automatic|period|year|extend|initial term)\b",
-     "qualify": r"(?i)(successive|automatic|perpetual|initial term|\d+\s*(year|month)|renewal term)",
-     "normalize": None,
+     "member": r"(?i)\b(renew\w*|extension|extend\w*|successive|auto-?renew\w*|perpetu\w*)\b.*\b(successive|automatic|period|years?|months?|days?|extend|initial term|perpetual)\b",
+     "qualify": r"(?i)(successive|automatic|perpetual|initial term|\d+\s*(year|month|day)|renewal term)",
+     "normalize": r"((?:(?!(?:for|of|and|the|to|in|on|a|an|per|each)\s)\w+\s+)?successive\s+[A-Za-z0-9\'\u2019\-]+(?:\s+[A-Za-z0-9\'\u2019\-]+){0,1}\s*(?:year|month)s?)",
+     "normalize_alt": [
+         r"(?:renew\w*|auto[\s-]*renew\w*|successive|extend\w*|renewal)(?:(?!\binitial\s+term\b)[\s\S]){0,120}?((?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty|thirty|forty|sixty|ninety|\d+)(?:\s*\(\d+\))?\s*(?:years?|months?))",
+         r"\b(perpetu\w*)",
+     ],
+     "clean": clean_renewal,
      "retrieve": ["renew", "successive", "auto-renew", "initial term", "extend"]},
     {"name": "non_compete", "strategy": "llm", "escalate": True,
      "hint": "non-compete restrictions, quote the clause or null",

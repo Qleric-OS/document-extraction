@@ -59,7 +59,8 @@ def ungradeable(exp: str) -> bool:
     return (not exp or exp == "[]" or "[*" in exp or "WHICH" in exp.upper())
 
 
-def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = False) -> None:
+def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = False,
+         expect_null: bool = False) -> None:
     field = next(f for f in CONTRACT_FIELDS if f["name"] == field_name)
     rows = list(csv.DictReader(open(os.path.join(CUAD, "master_clauses.csv"))))
     seen_files = {r["Filename"] for r in rows[:12]}
@@ -69,7 +70,7 @@ def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = 
                    if f.startswith(("Cybergy", "Euromedia", "Fulucai"))}
     pool = [r for r in rows
             if r["Filename"] not in seen_files
-            and (r.get(column) or "").strip()
+            and ((r.get(column) or "").strip() or expect_null)
             and (r.get(column) or "").strip() != "[]"]
     rng = random.Random(seed)
     sample = rng.sample(pool, min(n, len(pool)))
@@ -82,7 +83,9 @@ def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = 
     methods: dict[str, int] = {}
     for r in sample:
         exp = (r.get(column) or "").strip()
-        if ungradeable(exp):
+        if not exp and expect_null:
+            pass  # empty truth means no such clause: null is the right answer
+        elif ungradeable(exp):
             skipped += 1
             continue  # redacted / template-variable truth: ungradeable
         doc = load_doc(r["Filename"])
@@ -94,7 +97,9 @@ def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = 
         res = query(doc, [field], None, deep=False)  # blind protocol is keyless by design
         got = res["fields"].get(field_name) or {}
         val = got.get("value")
-        if flag:
+        if not exp and expect_null:
+            hit = val is None
+        elif flag:
             found = val is not None
             want = exp.lower() == "yes"
             hit = found == want
@@ -121,9 +126,10 @@ def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = 
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--flag"]
+    args = [a for a in sys.argv[1:] if a not in ("--flag", "--expect-null")]
     _field = args[0] if len(args) > 0 else "governing_law"
     _column = args[1] if len(args) > 1 else "Governing Law-Answer"
     _n = int(args[2]) if len(args) > 2 else 20
     _seed = int(args[3]) if len(args) > 3 else 7
-    main(_field, _column, _n, _seed, flag="--flag" in sys.argv[1:])
+    main(_field, _column, _n, _seed, flag="--flag" in sys.argv[1:],
+         expect_null="--expect-null" in sys.argv[1:])
