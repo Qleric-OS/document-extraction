@@ -11,6 +11,8 @@ evals/law_grammar_coverage.md): 409/433 CUAD answers exact, 0 real misses.
 from __future__ import annotations
 
 import re as _re
+from qleric.primitives.entity import _ed1, is_proper_noun_phrase
+from qleric.primitives.period import clean_renewal
 
 # Multi-word jurisdictions from CUAD truth (not guessed). Used by
 # clean_jurisdiction() to keep "England and Wales" whole and cut
@@ -34,19 +36,6 @@ _JUR_STOP = frozenset({
 })
 
 _STATE_WORDS = ("state", "province", "commonwealth", "district", "republic", "federal")
-
-
-def _ed1(a: str, b: str) -> bool:
-    """One insertion, deletion, or substitution apart (typo/OCR tolerance)."""
-    if a == b:
-        return True
-    la, lb = len(a), len(b)
-    if abs(la - lb) > 1:
-        return False
-    if la == lb:
-        return sum(1 for x, y in zip(a, b) if x != y) == 1
-    short, long = (a, b) if la < lb else (b, a)
-    return any(short == long[:i] + long[i + 1:] for i in range(len(long)))
 
 
 def clean_jurisdiction(raw: str | None) -> str | None:
@@ -98,58 +87,9 @@ def clean_jurisdiction(raw: str | None) -> str | None:
         return None
     # proper-noun shape: every word capitalized or a small connector;
     # kills "ECOPETROL found in", lone "that"/"any", stray verbs
-    connectors = {"of", "and", "the", "de", "la", "du", "der", "van", "von",
-                  "di", "da", "le", "les", "el", "al"}
-    for w in val.split():
-        core = w.strip(".,;:()\"'")
-        if not core:
-            continue
-        if core[0].isupper() or "'" in core or core.lower().startswith("mc"):
-            continue
-        if core.lower() in connectors:
-            continue
+    if not is_proper_noun_phrase(val):
         return None
     return val.title() if val.isupper() else val
-
-
-_NUM_WORDS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
-              "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
-              "twelve": "12", "twenty": "20", "thirty": "30",
-              "forty": "40", "sixty": "60", "ninety": "90"}
-
-
-def _tidy_period(v: str | None) -> str | None:
-    """Canonicalize a captured renewal region; truths favor digits ("12 months")."""
-    if not v:
-        return None
-    v = v.replace("-", " ")
-    v = _re.sub(r"\s+(terms?|periods?)\s*$", "", v, flags=_re.I).strip()
-    if _re.fullmatch(r"(?i)\s*perpetu\w*\s*", v):
-        return "perpetual"
-    m = _re.search(r"(?i)\b(successive\s+)?(one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty|thirty|forty|sixty|ninety|\d+)(?:\s*\(\d+\))?\s*(years?|months?|days?)\b", v)
-    if not m:
-        return None
-    succ, num, unit = m.group(1), m.group(2), m.group(3)
-    pre = _re.search(r"(?i)\b(\w+)\s+successive\b", v)
-    cnt = None
-    if pre and pre.group(1).lower() not in ("for", "of", "and", "the", "to", "in", "on",
-                                             "a", "an", "per", "each", "or", "nor", "successive"):
-        cnt = pre.group(1)
-    num = _NUM_WORDS.get(num.lower(), num)
-    base = "year" if unit.lower().startswith("year") else ("month" if unit.lower().startswith("month") else "day")
-    unit = base if num == "1" else base + "s"
-    parts = ([cnt] if cnt else []) + ([succ.strip()] if succ else []) + [f"{num} {unit}"]
-    return " ".join(parts).strip() or None
-
-
-def clean_renewal(raw: str | None) -> str | None:
-    """Extract a renewal period from a capture, or None (initial-term-only sections null out)."""
-    if not raw:
-        return None
-    if _re.fullmatch(r"(?i)\s*perpetu\w*\s*", raw):
-        return "perpetual"
-    return _tidy_period(raw)
-
 
 FIELDS = [
     {"name": "agreement_date", "strategy": "local", "hint": "date the agreement was signed",
