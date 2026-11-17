@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+from .primitives.defterm import resolve_reference as resolve_reference  # moved here; re-exported for core + external callers
+
 try:
     from rapidfuzz import fuzz
 except ImportError:  # fallback: exact-word overlap only
@@ -194,7 +196,6 @@ def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
     return None
 
 
-from .primitives.defterm import resolve_reference  # moved; re-exported for compatibility
 def normalize(pattern: str | None, span: str, strip: list[str] | None = None,
               alternates: list[str] | None = None, clean=None) -> str | None:
     """Clean a span: capture group if pattern matches, else None (no value found).
