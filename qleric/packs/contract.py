@@ -13,6 +13,11 @@ from __future__ import annotations
 import re as _re
 from qleric.primitives.entity import _ed1, is_proper_noun_phrase
 from qleric.primitives.period import clean_renewal
+from qleric.primitives.obligation import DISQUALIFY as P5_DISQUALIFY
+from qleric.primitives.obligation import clean_termination
+from qleric.primitives.obligation import STRONG as P5_STRONG
+from qleric.primitives.obligation import WEAK as P5_WEAK
+from qleric.primitives.obligation import clean_termination
 
 # Multi-word jurisdictions from CUAD truth (not guessed). Used by
 # clean_jurisdiction() to keep "England and Wales" whole and cut
@@ -136,10 +141,13 @@ FIELDS = [
      "exclude": r"(?i)this termination agreement|termination agreement (represents|shall|may)",
      "reassemble": False,
      "member": r"(?i)\bterminat\w*\b.*\b(notice|days|written|convenience|without cause|sole discretion|at any time)\b",
-     "qualify": r"(?i)(convenience|without cause|at its option|sole discretion|at any time|for any reason|without reason|upon (?:\S+\s+){0,4}?(days?|months?)'?s?\s+(?:prior\s+)?written\s+notice|on (?:\S+\s+){0,4}?(days?|months?)'?s?\s+(?:prior\s+)?written\s+notice)",
-     "qualify_strong": r"(?i)(convenience|without cause|for any reason|at (its )?will|for no reason|without reason)",
-     "disqualify": r"(?i)(effects?\s+of\s+terminat|consequences?\s+of|surviv\w*|shall\s+not\s+relea|shall\s+not\s+relie|for\s+cause|terminat\w+\s+(for|upon).{0,40}?(breach|default)|breach.{0,40}?terminat|insolven|deadlock|disagre|exercis\w*\s+\w+\s+decision|decision[\s-]making|failure\s+to\s+(agree|cure|perform|pay)|cure\s+period)",
-     "normalize": None,
+     # Discovery (find_section) uses qualify/disqualify below; verdict uses clean_termination (P5).
+     # Keep both: keys guide WHICH span wins, P5 decides whether it grants.
+     "qualify": "(?i)(" + P5_WEAK + ")",
+     "qualify_strong": "(?i)(" + P5_STRONG + ")",
+     "disqualify": "(?i)(" + P5_DISQUALIFY + ")",
+     "normalize": r"([\s\S]+)",
+     "clean": clean_termination,
      "retrieve": ["terminat", "convenience", "without cause", "30 days", "written notice"]},
     {"name": "renewal_term", "strategy": "local", "section": True,
      "hint": "renewal section: auto-renewal and successive periods",

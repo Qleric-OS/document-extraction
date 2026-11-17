@@ -42,7 +42,7 @@ _CONDITIONS = (r"if|when|upon|unless|until|provided\s+that|in\s+the\s+event\s+(?
 # New entries arrive only via the blind loop, never by invention.
 WEAK = (r"convenience|without\s+cause|at\s+its\s+option|sole\s+discretion"
         r"|at\s+any\s+time|for\s+any\s+reason|without\s+reason"
-        r"|(?:upon|on|with)\s+(?:\S+\s+){0,4}?(?:days?|months?|years?)\s+(?:prior\s+)?written\s+notice")
+        r"|(?:upon|on|with)\s+(?:\S+\s+){0,4}?(?:days?|months?|years?)'?\s+(?:prior\s+)?written\s+notice|without\s+(?:the\s+payment\s+of\s+any\s+)?penalt\w*")
 STRONG = (r"convenience|without\s+cause|for\s+any\s+reason|at\s+(?:its\s+)?will"
           r"|for\s+no\s+reason|without\s+reason")
 DISQUALIFY = (r"effects?\s+of\s+terminat|consequences?\s+of|surviv\w*"
@@ -167,6 +167,18 @@ def _action_object(post: str) -> tuple[str, str | None]:
     verb = words[i]
     rest = " ".join(words[i + 1 :]).strip(" ,;:")
     return verb, (rest or None)
+
+
+def clean_termination(raw: str | None) -> str | None:
+    """TFC verdict via P5: span grants termination-for-convenience, else null.
+
+    Replaces field-level qualify/strong/disqualify for termination_for_convenience.
+    Span discovery (headings/anchors/member) is untouched; only the verdict moves here.
+    """
+    if not raw:
+        return None
+    obs = find_obligations(raw, "termination")
+    return raw if obs else None
 
 
 def _split_conditions(rest: str) -> tuple[str, list[str]]:
