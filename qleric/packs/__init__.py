@@ -8,7 +8,7 @@ Field spec — every key a pack field may declare:
 | strategy | all | local, table, pii, or llm |
 | hint | llm/local | human description; also the default retrieval keywords |
 | anchors | local | fuzzy-match phrases for span search |
-| normalize | local | regex cleaning the span (capture group = value); None = span is the value |
+| normalize | local | regex cleaning the span (capture group = value); None = whole span goes to clean (or is the value if no clean) |
 | normalize_alt | local | ordered fallback regexes (longest-prefix-first grammars) |
 | clean | local | post-processor fn(value)->value (e.g. jurisdiction canonicalization) |
 | strip | local | trailing words to strip after normalize |

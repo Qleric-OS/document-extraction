@@ -17,7 +17,6 @@ from qleric.primitives.obligation import DISQUALIFY as P5_DISQUALIFY
 from qleric.primitives.obligation import clean_termination
 from qleric.primitives.obligation import STRONG as P5_STRONG
 from qleric.primitives.obligation import WEAK as P5_WEAK
-from qleric.primitives.obligation import clean_termination
 
 # Multi-word jurisdictions from CUAD truth (not guessed). Used by
 # clean_jurisdiction() to keep "England and Wales" whole and cut
@@ -146,7 +145,7 @@ FIELDS = [
      "qualify": "(?i)(" + P5_WEAK + ")",
      "qualify_strong": "(?i)(" + P5_STRONG + ")",
      "disqualify": "(?i)(" + P5_DISQUALIFY + ")",
-     "normalize": r"([\s\S]+)",
+     "normalize": None,
      "clean": clean_termination,
      "retrieve": ["terminat", "convenience", "without cause", "30 days", "written notice"]},
     {"name": "renewal_term", "strategy": "local", "section": True,

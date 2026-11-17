@@ -201,10 +201,16 @@ def normalize(pattern: str | None, span: str, strip: list[str] | None = None,
     """Clean a span: capture group if pattern matches, else None (no value found).
 
     alternates: further patterns tried in order (longest-prefix-first grammars).
-    clean: post-processor for the captured value (e.g. jurisdiction trimming).
+    clean: post-processor for the captured value, or the whole span when pattern is None (e.g. jurisdiction trimming).
     """
     if not pattern:
-        return span.strip()
+        val = span.strip()
+        if clean is None:
+            return val
+        try:
+            return clean(val)
+        except Exception:
+            return None
     m = re.search(pattern, span, re.IGNORECASE)
     if not m and alternates:
         for alt in alternates:
