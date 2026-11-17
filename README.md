@@ -106,7 +106,7 @@ No hosted key, no vendor SDK. Keys never logged, `.env` gitignored.
 | 127 mixed, luna-only (Nov 11, pre-retrieval baseline) | 127 | ~50k / ~19k | ~$0.01 |
 | 90-case corpus, keyless (all runs) | 0 | 0 / 0 | $0 |
 | 5 CUAD escalation, sparse ctx (Nov 12) | 10 | 69,709 / 7,195 | $0.0851 — 0 additional closes |
-| 8 CUAD escalation, dense retrieval (Nov 13) | 16 | 37,854 / 7,566 | $0.0634 — termination 62→88%, non-compete →100% |
+| 8 CUAD escalation, dense retrieval (Nov 13, historical snapshot n=8) | 16 | 37,854 / 7,566 | $0.0634 — then-current: termination 62→88%, non-compete 100% (small sample; current blind numbers in Evals table below) |
 The two escalation rows are the thesis in numbers: a big model on a raw dump closes nothing; the same model on dense retrieval converts. Retrieval, not reasoning.
 
 ## Evals
@@ -116,8 +116,8 @@ Seeded synthetic corpus (`evals/generate.py`) + private real-doc validation:
 | suite | result |
 |---|---|
 | 105 synthetic (invoice / resume / PII / contract) | 100% offline fields incl. 15 governing-law cases with incorporation decoys, 0 false grounds |
- | 537-case corpus, key live (Nov 16) | **535/537** (luna on llm-strategy fields), 0 false grounds, 0 errors; keyless-only baseline 400/537 — only invoice.seller misses (28/30) |
- | CUAD contracts (public clause truth) | agreement 58%, law **94/97 keyless on 100 unseen (97%, blind seed 7)** renewal 71%, exclusivity 58%, MFN 83%, non-compete 100%, termination-for-convenience **71/96 keyless blind (74%, seed 7)** vs 64% majority; luna pass varies 65–85 by sampling (model rejects temp/seed) — no reliable lift, ambiguities need review; inferred dates nulled. Yes/No flags grade correct nulls as hits |
+| 537-case corpus, key live (Nov 16) | **535/537** (luna on llm-strategy fields), 0 false grounds, 0 errors; keyless-only baseline 400/537 — only invoice.seller misses (28/30) |
+| CUAD contracts (public clause truth) | agreement 58%, law **94/97 keyless on 100 unseen (97%, blind seed 7)** renewal 71%, exclusivity 58%, MFN 83%, non-compete 100%, termination-for-convenience **71/96 keyless blind (74%, seed 7)** vs 64% majority; luna pass varies 65–85 by sampling (model rejects temp/seed) — no reliable lift, ambiguities need review; inferred dates nulled. Yes/No flags grade correct nulls as hits |
 | your docs (`python -m evals.validate_real`) | real CVs: 100% offline. Drop PDFs in `samples/real/` + truth in `evals/real_truth_local.py` — both gitignored, nothing leaves your machine |
 
 Misses feed back into the generator or pack anchors. No false grounds recorded to date.
@@ -130,5 +130,5 @@ Misses feed back into the generator or pack anchors. No false grounds recorded t
 
 - `qleric/` — core: `documents` (parse), `grounding` (prove it), `local` (spans), `highlight` (bboxes), `lm` (BYOK), `costs` (ledger), `mcp` (tools)
 - `qleric/packs/` — `invoice`, `resume`, `pii`, `contract`
-- `evals/` — `generate.py`, `eval.py`, `validate_real.py`, `validate_cuad.py`, `real_truth.py` (your template)
+ - `evals/` — `generate.py`, `eval.py`, `validate_real.py`, `validate_field_blind.py` (blind protocol, value+flag modes), `real_truth.py` (your template)
 - `api.py` — stateless Flask; `samples/golden/` — hand-checked demo docs; `samples/corpus/` — 90-case synthetic eval set (`real/` is gitignored private docs)

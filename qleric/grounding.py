@@ -39,13 +39,23 @@ def fuzzy_text_exists(needle: str, haystack: str, threshold: float = 0.85) -> bo
     return False
 
 
-def locate(needle: str, pages: list, threshold: float = 0.85) -> dict | None:
-    """Find which page a verbatim quote lives on. Returns {page_number, snippet} or None."""
+def locate(needle: str, pages: list, threshold: float = 0.85, *, exact: bool = False) -> dict | None:
+    """Find which page a verbatim quote lives on. Returns {page_number, snippet} or None.
+
+    exact=True requires the normalized quote to appear verbatim (for model
+    output: a paraphrase that shares 85% of words must NOT count as cited).
+    The default fuzzy overlap stays for keyless spans (PDF/OCR quirks are real).
+    """
     if not needle:
         return None
+    normed = normalize_text_for_matching(needle)
     for page in pages:
         text = page.text if hasattr(page, "text") else page.get("text", "")
         number = page.number if hasattr(page, "number") else page.get("number")
+        if exact:
+            if normed and normed in normalize_text_for_matching(text):
+                return {"page_number": number, "snippet": " ".join(needle.split())}
+            continue
         if fuzzy_text_exists(needle, text, threshold):
             return {"page_number": number, "snippet": " ".join(needle.split())}
     return None

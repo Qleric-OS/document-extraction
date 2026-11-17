@@ -27,6 +27,12 @@ from evals.eval import match  # noqa: E402
 CUAD = os.getenv("CUAD_DIR", os.path.expanduser("~/Desktop/CUAD_v1"))
 
 
+def _require_cuad() -> None:
+    if not os.path.isdir(CUAD):
+        print(f"CUAD corpus not found at {CUAD}. Set CUAD_DIR to a CUAD_v1 checkout to run blind validation.")
+        raise SystemExit(2)
+
+
 def load_doc(relpath: str) -> Document | None:
     txtdir = os.path.join(CUAD, "full_contract_txt")
     stem = relpath.rsplit(".", 1)[0]
@@ -61,6 +67,7 @@ def ungradeable(exp: str) -> bool:
 
 def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = False,
          expect_null: bool = False) -> None:
+    _require_cuad()
     field = next(f for f in CONTRACT_FIELDS if f["name"] == field_name)
     rows = list(csv.DictReader(open(os.path.join(CUAD, "master_clauses.csv"))))
     seen_files = {r["Filename"] for r in rows[:12]}

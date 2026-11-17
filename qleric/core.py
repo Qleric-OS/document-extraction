@@ -297,7 +297,7 @@ def _run_lm_pass(doc: Document, llm_fields: list[dict], results: dict,
     for f in llm_fields:
         item = raw.get(f["name"], {}) if isinstance(raw, dict) else {}
         value, verbatim = item.get("value"), item.get("verbatim")
-        hit = grounding.locate(verbatim, doc.pages) if verbatim else None
+        hit = grounding.locate(verbatim, doc.pages, exact=True) if verbatim else None
         if value and hit:
             results[f["name"]] = {"value": value, "verbatim": verbatim,
                                   **hit, "grounded": True, "source": f"llm-{tier}"}
@@ -333,6 +333,15 @@ def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:
                         pdf_data, r["page_number"], r["verbatim"])
             except Exception:
                 pass
+    for r in results.values():
+        if not (isinstance(r, dict) and r.get("grounded") and r.get("verbatim")):
+            continue
+        if isinstance(r.get("value"), list):
+            continue  # table items carry per-row cites, checked at build
+        if not grounding.locate(r["verbatim"], doc.pages):
+            r["grounded"] = False  # invariant: no location, no grounding claim
+            note = "finalize: verbatim not found in pages"
+            r["note"] = f"{r.get('note', '')}; {note}" if r.get("note") else note
     grounded = sum(1 for r in results.values() if isinstance(r, dict) and r.get("grounded"))
     stats = results.pop("_retrieval", None)
     debug = {}
@@ -342,6 +351,9 @@ def finalize(doc: Document, results: dict, pdf_data: bytes | None) -> dict:
             debug[name] = sorted(r.pop("_mechanisms"))
     meta: dict = {"format": doc.format, "pages": len(doc.pages),
                   "grounding_rate": f"{grounded}/{len(results)}"}
+    bl = doc.boilerplate_lines
+    if bl:
+        meta["boilerplate_removed"] = len(bl)
     try:
         from . import costs as _costs
         meta["cost"] = _costs.total()

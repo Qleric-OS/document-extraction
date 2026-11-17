@@ -20,6 +20,9 @@ Field spec — every key a pack field may declare:
 | exclude | section | false-friend lines that never start the section |
 | member | section | body-line pattern (reassembly + filtering) |
 | qualify | section | assembled value must match, else None (wrong-substance guard) |
+| qualify_strong | section | strong markers; a section containing one is accepted even if disqualify also matches |
+| disqualify | section | conditional/cause/effects language; rejects the section unless qualify_strong matched (checked sentence-by-sentence) |
+| threshold | local | per-field override of TUNE["span_threshold"] |
 | stop_fields | section | rival-heading pack (core always passes sibling sections) |
 | reassemble | section | doc-wide member sweep for shuffled docs (default True) |
 | columns | table | header synonyms for row-grounded items |

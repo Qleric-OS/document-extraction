@@ -28,6 +28,7 @@ def record(model: str, prompt_chars: int, completion_chars: int,
         "cost_usd": cost_usd,
     }
     LEDGER.append(entry)
+    del LEDGER[:-10000]  # bound in-process growth on long-lived servers
     if os.getenv("QLERIC_COST_LOG") == "1":
         with open("COSTS.jsonl", "a") as f:
             f.write(json.dumps(entry) + "\n")
@@ -43,7 +44,8 @@ def total() -> dict:
     }
 
 
-# Per-1M-token prices (update as providers change). Unknown models: estimate at $0.
+# Starting estimates, NOT provider quotes: update from invoices as providers change.
+# Unknown models intentionally cost $0 (unpriced, never guessed).
 PRICES = {
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-6-luna": (0.10, 0.50),

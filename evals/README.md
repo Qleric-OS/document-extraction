@@ -2,7 +2,7 @@
 
 Regenerate: `python3 evals/generate.py` (seeded `20261111`, deterministic).
 Run keyless: `python3 evals/eval.py samples/corpus/corpus.jsonl`
-Run with LLM: `OPENAI_API_KEY=... MODEL=gpt-6-luna python3 evals/eval.py samples/corpus/corpus.jsonl --deep`
+Run with LLM: put `OPENAI_API_KEY=...` in `.env` (gitignored, never inline keys in shell history), then `MODEL=gpt-6-luna python3 evals/eval.py samples/corpus/corpus.jsonl --deep`
 
 ## Stratification (30 invoice/resume/PII + 15 contract)
 

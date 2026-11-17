@@ -1,4 +1,6 @@
 # Governing-law grammar coverage (CUAD truth-mined, 2026-11-14)
+ > Tuning-time analysis (Nov 14): grammar mined from truth *before* blind validation.
+ > For unseen-doc performance see the README evals table (blind 94/97 keyless).
 
 Source: `master_clauses.csv` Governing Law-Answer, 510 rows, 431 non-empty distinct.
 Method: synthetic clause `governed by the laws of {answer}` through the candidate grammar.

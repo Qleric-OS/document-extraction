@@ -31,9 +31,18 @@ class Document:
         return "\n\n".join(p.text for p in self.pages if not p.sparse)
 
     @property
+    def boilerplate_lines(self) -> set[str]:
+        """Lines repeated boilerplate-style (headers/footers/stamps), excluded from body_text."""
+        cached = self.__dict__.get("_boilerplate_cache")
+        if cached is None:
+            cached = _boilerplate(self)
+            self.__dict__["_boilerplate_cache"] = cached
+        return cached
+
+    @property
     def body_text(self) -> str:
         """Body text: non-sparse pages, boilerplate lines removed."""
-        skip = _boilerplate(self)
+        skip = self.boilerplate_lines
         out = []
         for p in self.pages:
             if p.sparse:

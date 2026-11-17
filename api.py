@@ -1,4 +1,9 @@
-"""Stateless extraction API. Keyless core; LLM fields need API_KEY env on the server."""
+"""Stateless extraction API. Keyless core; LLM fields need API_KEY env on the server.
+
+Lock down with API_TOKEN env: when set, /analyze requires
+Authorization: Bearer <token> (anyone with the endpoint could otherwise
+spend the owner key via deep=true on escalate-flagged fields).
+"""
 from __future__ import annotations
 
 import logging
@@ -31,8 +36,17 @@ def health():
     return jsonify({"status": "healthy", "packs": sorted(PACKS)})
 
 
+def _authorized() -> bool:
+    want = os.getenv("API_TOKEN", "")
+    if not want:
+        return True
+    return request.headers.get("Authorization", "") == f"Bearer {want}"
+
+
 @app.post("/analyze")
 def analyze():
+    if not _authorized():
+        return jsonify({"error": "Unauthorized."}), 401
     if "file" not in request.files:
         return jsonify({"error": "No file provided."}), 400
     file = request.files["file"]
