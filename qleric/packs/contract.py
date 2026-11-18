@@ -135,6 +135,26 @@ _NOTICE_MAIN = (_NOTICE_ATAR + _NOTICE_VETO + r"(?=[^.]*?" + _NOTICE_REN + r")"
                 + _NOTICE_SH2B + r")")
 _NOTICE_ALT = (_NOTICE_VETO + r"[^.]*?(?:" + _NOTICE_SH1 + r"|" + _NOTICE_SH2 + r"|"
                + _NOTICE_SH2B + r")")
+_RENEW_VETO = r"(?![^.]*?(?:breach|cure|cured|curing|default\w*|failure\s+to))"
+_RENEW_PRE = r"(?:(?!(?:for|of|and|the|to|in|on|a|an|per|each|or|nor|successive)\s)\w+\s+)?"
+_RENEW_SPECIAL = r"(?:annual(?:ly)?\s+(?:periods?|terms?)|month\s*(?:-\s*)?to\s*(?:-\s*)?month)"
+_RENEW_DUR = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+              r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
+              r"thirty|forty|fifty|sixty|eighty|ninety|\d+)(?:[ \t]*\(\d+\))?[ \t]*-?"
+              r"[ \t]*(?:days?|months?|weeks?|years?)(?:'s?)?")
+# Renewal needs a license-area anchor nearby for open-ended grants
+# ("in perpetuity", "unlimited terms") to count as renewal periods.
+_RENEW_CTX = r"(?=[^.]*?(?:renew\w*|extend\w*|successive|evergreen|auto\w*))"
+_RENEW_MAIN = (_RENEW_VETO
+               + r"((?:unlimited\s+(?:number\s+of\s+)?(?:successive\s+)?(?:terms?|renewals?|periods?))"
+               + r"|(?:" + _RENEW_PRE
+               + r"successive\s+(?:[A-Za-z0-9'\u2019\-]+\s+){0,3}?" + _RENEW_DUR + r")"
+               + r"|(?:" + _RENEW_CTX + r"(perpetu\w*)))")
+_RENEW_ALT = [(_RENEW_VETO + r"(" + _RENEW_PRE
+               + r"(?:automat\w*\s+renew\w*|renew\w*\s+automat\w*|auto-?renew\w*|renew\w*|successive|extend\w*|renewal)"
+               + r"(?:(?!\binitial\s+term\b)[\s\S]){0,120}?" + _RENEW_DUR + r")"),
+              r"(" + _RENEW_SPECIAL + r")",
+              r"\b(perpetu\w*)"]
 FIELDS = [
     {"name": "agreement_date", "strategy": "local", "hint": "date the agreement was signed",
      "anchors": ["agreement date", "dated as of", "dated", "date of agreement",
@@ -193,15 +213,13 @@ FIELDS = [
      "anchors": ["renewal", "renewal term", "successive", "auto-renew", "initial term",
                  "term", "initial term", "effective date and term"],
      "heading": None,
-     "exclude": None,
-     "reassemble": False,
-     "member": r"(?i)\b(renew\w*|extension|extend\w*|successive|auto-?renew\w*|perpetu\w*)\b.*\b(successive|automatic|period|years?|months?|days?|extend|initial term|perpetual)\b",
-     "qualify": r"(?i)(successive|automatic|perpetual|initial term|\d+\s*(year|month|day)|renewal term)",
-     "normalize": r"((?:(?!(?:for|of|and|the|to|in|on|a|an|per|each)\s)\w+\s+)?successive\s+[A-Za-z0-9\'\u2019\-]+(?:\s+[A-Za-z0-9\'\u2019\-]+){0,1}\s*(?:year|month)s?)",
-     "normalize_alt": [
-         r"(?:renew\w*|auto[\s-]*renew\w*|successive|extend\w*|renewal)(?:(?!\binitial\s+term\b)[\s\S]){0,120}?((?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|eighty|ninety|\d+)(?:\s*\(\d+\))?\s*(?:years?|months?))",
-         r"\b(perpetu\w*)",
-     ],
+     "exclude": r"(?i)\bdefinitions?\b",
+     "threshold": 15.0,
+     "reassemble": True,
+     "member": r"(?i)\b(renew\w*|extension|extend\w*|successive|auto-?renew\w*|perpetu\w*)\b.*\b(successive|automatic|period|years?|months?|days?|extend|initial term|perpetual)\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|eighty|ninety|\d+)\b.{0,60}?\b(?:periods?|terms?|successive|renew\w*)\b|\b(?:periods?|terms?|successive|renew\w*)\b.{0,60}?\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|eighty|ninety|\d+)\b",
+     "qualify": r"(?i)(successive|automatic|perpetual|unlimited|initial term|\d+\s*(year|month|day)|renewal term)",
+     "normalize": _RENEW_MAIN,
+     "normalize_alt": _RENEW_ALT,
      "clean": clean_renewal,
      "retrieve": ["renew", "successive", "auto-renew", "initial term", "extend"]},
     {"name": "notice_period_to_terminate_renewal", "strategy": "local", "section": True,

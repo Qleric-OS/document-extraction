@@ -18,25 +18,26 @@ _NUM_WORDS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
 
 _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
          "sixty": 60, "eighty": 80, "ninety": 90}
-
 def _tidy_period(v: str | None) -> str | None:
+
     """Canonicalize a captured renewal region; truths favor digits ("12 months")."""
     if not v:
         return None
+    v = _re.sub(r"(?i)\bannual(?:ly)?\s+(periods?|terms?)\b", "1 year", v)
+    v = _re.sub(r"(?i)\bmonth\s*(?:-\s*)?to\s*(?:-\s*)?month\b", "1 month", v)
     v = _re.sub(r"(?i)\b(twenty|thirty|forty|fifty|sixty|eighty|ninety)\s*[-\s]\s*(one|two|three|four|five|six|seven|eight|nine)\b",
                 lambda m: str(_TENS[m.group(1).lower()] + int(_NUM_WORDS[m.group(2).lower()])), v)
     v = _re.sub(r"\s+(terms?|periods?)\s*$", "", v, flags=_re.I).strip()
     if _re.fullmatch(r"(?i)\s*perpetu\w*\s*", v):
         return "perpetual"
-    m = _re.search(r"(?i)\b(successive\s+)?(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|eighty|ninety|\d+)(?:\s*\(\d+\))?\s*(years?|months?|weeks?|days?)\b", v)
+    m = _re.search(r"(?i)\b((successive)\s+(?:\w+\s+){0,3}?)?(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|eighty|ninety|\d+)(?:\s*\(\d+\))?\s*-?\s*(years?|months?|weeks?|days?)\b", v)
     if not m:
         return None
-    succ, num, unit = m.group(1), m.group(2), m.group(3)
+    succ, num, unit = m.group(2), m.group(3), m.group(4)
     pre = _re.search(r"(?i)\b(\w+)\s+successive\b", v)
     cnt = None
-    if pre and pre.group(1).lower() not in ("for", "of", "and", "the", "to", "in", "on",
-                                             "a", "an", "per", "each", "or", "nor", "successive"):
-        cnt = pre.group(1)
+    if pre and (pre.group(1).lower() in _NUM_WORDS or pre.group(1).isdigit()):
+        cnt = _NUM_WORDS.get(pre.group(1).lower(), pre.group(1))
     num = _NUM_WORDS.get(num.lower(), num)
     paren = _re.search(r"\((\d+)\)", v)
     if paren:
@@ -52,6 +53,8 @@ def clean_renewal(raw: str | None) -> str | None:
     if not raw:
         return None
     if _re.fullmatch(r"(?i)\s*perpetu\w*\s*", raw):
+        return "perpetual"
+    if _re.search(r"(?i)unlimited\s+(number\s+of\s+)?(successive\s+)?(terms?|renewals?|periods?)", raw):
         return "perpetual"
     return _tidy_period(raw)
 

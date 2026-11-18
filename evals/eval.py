@@ -47,6 +47,14 @@ def match(name: str, got: str | None, exp) -> bool | None:
         return False
     if is_money_field(name):
         return money_digits(got) == money_digits(str(exp))
+    if name == "renewal_term":
+        # "successive" is annotator convention for auto-renewal, applied
+        # inconsistently ("automatic renewal of one year" -> both "1 year"
+        # and "successive 1 year" in truth). Compare modulo the word.
+        import re as _re2
+        g = _re2.sub(r"^successive\s+", "", norm(got))
+        e = _re2.sub(r"^successive\s+", "", norm(str(exp)))
+        return g == e
     if "governing_law" in name or "jurisdiction" in name:
         import re as _re
         def _canon(v: str) -> str:
