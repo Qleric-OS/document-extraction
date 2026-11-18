@@ -50,8 +50,9 @@ DISQUALIFY = (r"effects?\s+of\s+terminat|consequences?\s+of|surviv\w*"
               r"|terminat\w+\s+(for|upon).{0,40}?(breach|default)"
               r"|breach.{0,40}?terminat|insolven|deadlock|disagre"
               r"|exercis\w*\s+\w+\s+decision|decision[\s-]making"
-                      r"|competent\s+jurisdiction|exclusive\s+rights?|reserved\s+rights?"
+                      r"|competent\w*|exclusive\s+rights?|reserved\s+rights?"
                       r"|rights\s+granted|intellectual\s+property"
+                      r"|whether\s+or\s+not|non[-\s]?compet\w*\s+agreement"
               r"|failure\s+to\s+(agree|cure|perform|pay)|cure\s+period"
               r"|shall\s+not\s+be\s+deemed|shall\s+be\s+deemed|construed\s+as"
               r"|interpreted\s+as|\bdefined\s+as|\bdefinition\s+of")
@@ -236,3 +237,38 @@ def find_obligations(span: str, category: str) -> list[dict]:
             "verbatim": sent,
         })
     return out
+
+
+_NEGATED = (r"\bnot\b|\bnever\b|n't\b|\bneither\b|\bnor\b"
+             r"|prohibit\w*\s+(?:from|against)|\brefrain\w*\s+from"
+             r"|\bbarred\s+from")
+
+
+def find_unheaded(text: str, category: str) -> str | None:
+    """Doc-wide fallback: first negated-or-strong sentence with a qualifying grant.
+
+    Only fires when headed-section discovery yields nothing. The negated/strong
+    gate is load-bearing: bare weak-marker matches FP at scale (see TFC line-grant
+    experiments). Verdict itself is full find_obligations (verb + modal + category
+    + disqualify unless strong).
+    """
+    for sent in _sentences(text):
+        if not re.search(STRONG, sent, re.IGNORECASE) and not re.search(_NEGATED, sent, re.IGNORECASE):
+            continue
+        if find_obligations(sent, category):
+            return sent
+    return None
+
+
+def verdict_for(category: str):
+    """clean-compatible verdict: span if it grants a qualifying obligation, else None.
+
+    Lets section-based fields (find_section for discovery) delegate the verdict
+    to P5 while keeping a single shared implementation.
+    """
+    def verdict(raw: str | None) -> str | None:
+        if not raw:
+            return None
+        return raw if find_obligations(raw, category) else None
+    verdict.__name__ = "clean_%s" % category
+    return verdict

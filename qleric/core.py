@@ -93,9 +93,16 @@ def _offline_pass(doc: Document, fields: list[dict], results: dict) -> None:
         if strategy == "local" and f.get("section"):
             stops = [x for x in fields if x.get("section")] or None
             span = local.find_section(doc.body_text, f, stop_fields=stops)
+            value = None
             if span:
                 value = local.normalize(f.get("normalize"), span, f.get("strip"),
                                                         alternates=f.get("normalize_alt"), clean=f.get("clean"))
+            if value is None and f.get("fallback"):
+                span = f["fallback"](doc.body_text)
+                if span:
+                    value = local.normalize(f.get("normalize"), span, f.get("strip"),
+                                                            alternates=f.get("normalize_alt"), clean=f.get("clean"))
+            if span:
                 hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
                 results[f["name"]] = {"value": value, "verbatim": span.strip(),
                                       **hit, "grounded": True, "source": "local"}

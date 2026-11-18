@@ -10,13 +10,19 @@ evals/law_grammar_coverage.md): 409/433 CUAD answers exact, 0 real misses.
 """
 from __future__ import annotations
 
+import functools
 import re as _re
 from qleric.primitives.entity import _ed1, is_proper_noun_phrase
 from qleric.primitives.period import clean_renewal
-from qleric.primitives.obligation import DISQUALIFY as P5_DISQUALIFY
-from qleric.primitives.obligation import clean_termination
-from qleric.primitives.obligation import STRONG as P5_STRONG
-from qleric.primitives.obligation import WEAK as P5_WEAK
+from qleric.primitives.obligation import (
+    DISQUALIFY as P5_DISQUALIFY,
+    STRONG as P5_STRONG,
+    WEAK as P5_WEAK,
+    CATEGORIES as P5_CATEGORIES,
+    find_unheaded as P5_find_unheaded,
+    clean_termination,
+    verdict_for,
+)
 
 # Multi-word jurisdictions from CUAD truth (not guessed). Used by
 # clean_jurisdiction() to keep "England and Wales" whole and cut
@@ -164,8 +170,15 @@ FIELDS = [
      ],
      "clean": clean_renewal,
      "retrieve": ["renew", "successive", "auto-renew", "initial term", "extend"]},
-    {"name": "non_compete", "strategy": "llm", "escalate": True,
+    {"name": "non_compete", "strategy": "local", "section": True,
      "hint": "non-compete restrictions, quote the clause or null",
+     "anchors": P5_CATEGORIES["non_compete"]["anchors"],
+     "heading": r"(?i)^\s*(\d+[\.\)]|article\s+\d+|section\s+\d+|[a-z]\.)\s*",
+     "exclude": None,
+     "reassemble": False,
+     "normalize": None,
+     "clean": verdict_for("non_compete"),
+     "fallback": functools.partial(P5_find_unheaded, category="non_compete"),
      "retrieve": ["compete", "competitive", "restrictive covenant", "solicit", "covenant not to"]},
     {"name": "exclusivity", "strategy": "llm", "escalate": True,
      "hint": "exclusivity obligations, quote the clause or null",
