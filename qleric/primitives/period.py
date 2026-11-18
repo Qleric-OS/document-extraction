@@ -23,7 +23,8 @@ def _tidy_period(v: str | None) -> str | None:
     """Canonicalize a captured renewal region; truths favor digits ("12 months")."""
     if not v:
         return None
-    v = v.replace("-", " ")
+    v = _re.sub(r"(?i)\b(twenty|thirty|forty|fifty|sixty|eighty|ninety)\s*[-\s]\s*(one|two|three|four|five|six|seven|eight|nine)\b",
+                lambda m: str(_TENS[m.group(1).lower()] + int(_NUM_WORDS[m.group(2).lower()])), v)
     v = _re.sub(r"\s+(terms?|periods?)\s*$", "", v, flags=_re.I).strip()
     if _re.fullmatch(r"(?i)\s*perpetu\w*\s*", v):
         return "perpetual"

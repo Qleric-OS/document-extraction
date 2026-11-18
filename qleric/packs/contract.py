@@ -199,7 +199,7 @@ FIELDS = [
      "qualify": r"(?i)(successive|automatic|perpetual|initial term|\d+\s*(year|month|day)|renewal term)",
      "normalize": r"((?:(?!(?:for|of|and|the|to|in|on|a|an|per|each)\s)\w+\s+)?successive\s+[A-Za-z0-9\'\u2019\-]+(?:\s+[A-Za-z0-9\'\u2019\-]+){0,1}\s*(?:year|month)s?)",
      "normalize_alt": [
-         r"(?:renew\w*|auto[\s-]*renew\w*|successive|extend\w*|renewal)(?:(?!\binitial\s+term\b)[\s\S]){0,120}?((?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty|thirty|forty|sixty|ninety|\d+)(?:\s*\(\d+\))?\s*(?:years?|months?))",
+         r"(?:renew\w*|auto[\s-]*renew\w*|successive|extend\w*|renewal)(?:(?!\binitial\s+term\b)[\s\S]){0,120}?((?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|eighty|ninety|\d+)(?:\s*\(\d+\))?\s*(?:years?|months?))",
          r"\b(perpetu\w*)",
      ],
      "clean": clean_renewal,
@@ -214,6 +214,8 @@ FIELDS = [
      "threshold": 15.0,
      "reassemble": True,
      "member": r"(?i)\b(renew\w*|non-?renewal|expir\w*|terminat\w*|cancel\w*|extension|extend\w*|evergreen|automat\w*|end\s+of\s+the)\b.{0,200}?\b(notic\w*|notif\w*)\b|\b(notic\w*|notif\w*)\b.{0,200}?\b(renew\w*|non-?renewal|expir\w*|terminat\w*|cancel\w*|extension|extend\w*)\b",
+     "normalize": _NOTICE_T0,
+     "normalize_alt": [_NOTICE_MAIN, _NOTICE_ALT],
      "clean": clean_notice,
      "retrieve": ["prior written notice", "days notice", "non-renewal", "not renew", "expire", "evergreen"]},
     {"name": "non_compete", "strategy": "local", "section": True,
