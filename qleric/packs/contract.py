@@ -13,7 +13,7 @@ from __future__ import annotations
 import functools
 import re as _re
 from qleric.primitives.entity import _ed1, is_proper_noun_phrase
-from qleric.primitives.period import clean_renewal
+from qleric.primitives.period import clean_renewal, clean_notice
 from qleric.primitives.obligation import (
     DISQUALIFY as P5_DISQUALIFY,
     STRONG as P5_STRONG,
@@ -101,6 +101,40 @@ def clean_jurisdiction(raw: str | None) -> str | None:
         return None
     return val.title() if val.isupper() else val
 
+_NOTICE_NUM = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+               r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
+               r"thirty|forty|fifty|sixty|eighty|ninety|\d+)")
+# Duration core. Intra-duration whitespace is spaces/tabs only: a number and its
+# unit split across lines ("successive one\\ndays...") must not fuse into "1 day".
+_NOTICE_DUR = (_NOTICE_NUM + r"(?:[ \t]*\(\d+\))?[ \t]*-?[ \t]*"
+               r"(?:days?|months?|weeks?|years?)(?:'s?)?")
+_NOTICE_NW = r"(?:notic\w*|notif\w*)"
+_NOTICE_TAIL = (r"(?:prior\s+|before\s+|preceding\s+|previous\s+|advance\s+|following\s+"
+                r"|of\s+the\s+(?:conclusion|end)\b|to\s+the\s+end)")
+_NOTICE_VETO = r"(?![^.]*?(?:breach|cure|cured|curing|default\w*|failure\s+to))"
+_NOTICE_ATAR = r"(?![^.]*?\bat\s+any\s+time\b)"
+_NOTICE_REN = (r"(?:renew\w*|non-?renewal|expir\w*|extension|extend\w*|evergreen|"
+               r"terms?\b)")
+_NOTICE_AUTOREN = (r"(?:automat\w*\s+renew\w*|renew\w*\s+automat\w*|auto-?renew\w*|"
+                   r"evergreen)")
+_NOTICE_NONREN = r"(?:non-?renew\w*|not\s+to\s+renew)"
+_NOTICE_SH1 = ("(" + _NOTICE_DUR + r")\s*" + _NOTICE_TAIL + r"?(?:written\s+)?"
+               + _NOTICE_NW)
+_NOTICE_SH2 = (_NOTICE_NW + r"[^.]{0,120}?(?:at\s+least\s+|not\s+less\s+than\s+|"
+               r"no\s+fewer\s+than\s+)?(" + _NOTICE_DUR + r")\s*" + _NOTICE_TAIL)
+_NOTICE_SH2B = (_NOTICE_NW + r"[^.]{0,120}?(?:of\s+not\s+less\s+than\s+|of\s+at\s+least\s+)"
+                r"(" + _NOTICE_DUR + r")\b")
+# Tier 0: the canonical non-renewal clause lives in the auto-renewal sentence.
+# Tier 1: renewal/term-scoped notice, excluding at-any-time (TFC) grants.
+# Tier 2: any termination notice (general-termination truths like Euromedia).
+_NOTICE_T0 = (_NOTICE_ATAR + _NOTICE_VETO + r"(?=[^.]*?" + _NOTICE_AUTOREN + r")"
+              r"(?=[^.]*?" + _NOTICE_NONREN + r")"
+              r"[^.]*?(" + _NOTICE_DUR + r")\s*" + _NOTICE_TAIL)
+_NOTICE_MAIN = (_NOTICE_ATAR + _NOTICE_VETO + r"(?=[^.]*?" + _NOTICE_REN + r")"
+                r"[^.]*?(?:" + _NOTICE_SH1 + r"|" + _NOTICE_SH2 + r"|"
+                + _NOTICE_SH2B + r")")
+_NOTICE_ALT = (_NOTICE_VETO + r"[^.]*?(?:" + _NOTICE_SH1 + r"|" + _NOTICE_SH2 + r"|"
+               + _NOTICE_SH2B + r")")
 FIELDS = [
     {"name": "agreement_date", "strategy": "local", "hint": "date the agreement was signed",
      "anchors": ["agreement date", "dated as of", "dated", "date of agreement",
@@ -170,6 +204,18 @@ FIELDS = [
      ],
      "clean": clean_renewal,
      "retrieve": ["renew", "successive", "auto-renew", "initial term", "extend"]},
+    {"name": "notice_period_to_terminate_renewal", "strategy": "local", "section": True,
+     "hint": "notice period to stop auto-renewal, e.g. 30 days prior written notice",
+     "anchors": ["non-renewal", "nonrenewal", "notice", "automatic renewal", "evergreen",
+                 "renewal", "expiration", "written notice", "termination",
+                 "term and termination", "term", "notify", "notification"],
+     "heading": None,
+     "exclude": None,
+     "threshold": 15.0,
+     "reassemble": True,
+     "member": r"(?i)\b(renew\w*|non-?renewal|expir\w*|terminat\w*|cancel\w*|extension|extend\w*|evergreen|automat\w*|end\s+of\s+the)\b.{0,200}?\b(notic\w*|notif\w*)\b|\b(notic\w*|notif\w*)\b.{0,200}?\b(renew\w*|non-?renewal|expir\w*|terminat\w*|cancel\w*|extension|extend\w*)\b",
+     "clean": clean_notice,
+     "retrieve": ["prior written notice", "days notice", "non-renewal", "not renew", "expire", "evergreen"]},
     {"name": "non_compete", "strategy": "local", "section": True,
      "hint": "non-compete restrictions, quote the clause or null",
      "anchors": P5_CATEGORIES["non_compete"]["anchors"],
