@@ -20,6 +20,8 @@ MODALS = {
     "is permitted to": "may",
     "may": "may",
     "can": "may",
+    "agrees not to": "shall",
+    "agree not to": "shall",
     "agrees to": "shall",
     "agree to": "shall",
     "covenants": "shall",
@@ -28,7 +30,6 @@ MODALS = {
     "must": "shall",
     "will": "shall",
 }
-
 NEGATION = (
     r"not\b|never\b|n't\b|neither\b|\bnor\b|prohibit\w*\s+(from|against)"
     r"|\brefrain\w*\s+from|\bbarred\s+from"
@@ -91,6 +92,7 @@ CATEGORIES = {
         "anchors": ["non-solicit", "non-solicitation", "solicit", "employees",
                     "personnel", "hire", "recruit"],
         "needs_marker": False,
+        "target": r"employ\w*|personnel|\bstaff\b|workforce",
     },
     "license_grant": {
         "verbs": r"licen[sc]e|grant\w*\s+.*right|authorized\s+to\s+use",
@@ -199,13 +201,18 @@ def find_obligations(span: str, category: str) -> list[dict]:
 
     Accept iff a sentence names the category verb + a modal and carries a
     weak/strong marker (or, for prohibitive categories, a negated modal),
-    with no disqualifier unless a strong marker protects it.
+    with no disqualifier unless a strong marker protects it. Categories with
+    a `target` pattern additionally require the solicitation target class in
+    the granting sentence (e.g. employee words for no_solicit_employees, so
+    "solicit any Merchants" and "unsolicited e-mail" do not grant).
     """
     cfg = CATEGORIES[category]
     needs_marker = cfg.get("needs_marker", True)
     out = []
     for sent in _sentences(span):
         if not re.search(cfg["verbs"], sent, re.IGNORECASE):
+            continue
+        if cfg.get("target") and not re.search(cfg["target"], sent, re.IGNORECASE):
             continue
         found = _find_modal(sent)
         if not found:
