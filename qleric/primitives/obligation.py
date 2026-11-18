@@ -95,9 +95,10 @@ CATEGORIES = {
         "target": r"employ\w*|personnel|\bstaff\b|workforce",
     },
     "license_grant": {
-        "verbs": r"licen[sc]e|grant\w*\s+.*right|authorized\s+to\s+use",
+        "verbs": r"licen[sc]e(?!es?\b)|grant\w*\s+.*right|authorized\s+to\s+use",
         "anchors": ["license grant", "license", "authorized use", "grant of rights"],
         "needs_marker": False,
+        "exclude": r"reserv\w*|governmental\s+(authoriz|approvals?)|licenses?,\s+permits",
     },
 }
 
@@ -213,6 +214,8 @@ def find_obligations(span: str, category: str) -> list[dict]:
         if not re.search(cfg["verbs"], sent, re.IGNORECASE):
             continue
         if cfg.get("target") and not re.search(cfg["target"], sent, re.IGNORECASE):
+            continue
+        if cfg.get("exclude") and re.search(cfg["exclude"], sent, re.IGNORECASE):
             continue
         found = _find_modal(sent)
         if not found:
