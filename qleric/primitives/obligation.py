@@ -136,6 +136,29 @@ CATEGORIES = {
         "needs_marker": False,
         "exclude": r"\bus\w*\s+(?:of\s+|the\s+)*(?:licensed|compan\w*|licensor|marks?\b|materials?|name\b|logo|goodwill)\b",
     },
+    "cap_on_liability": {
+        "verbs": r"liab\w*|responsib\w*|exceed\w*",
+        "anchors": ["limitation of liability", "cap on liability", "cap", "liability",
+                    "limited liability", "exclusion of damages"],
+        "needs_marker": False,
+        "markers": r"in\s+no\s+event|no\s+event|shall\s+not\s+be\s+liable|not\s+liable|exceed|cap\s+(?:on|of)?|limited\s+to|capped?\s+at|maximum|uncapped|unlimited",
+        "exclude": r"(?:shall|will|must|agrees?\s+to|covenants?\s+to)\s+(?:defend,?\s+)?(?:and\s+)?indemnif\w*|indemnif\w*\s+(?:and\s+)?hold\s+harmless|hold\s+harmless\s+from|reimburs\w*|personal\s+liabilit\w*|power\b.{0,50}?\bbind\b|shall\s+mean\b|means\s+(?:the\s+)?(?:all\s+)?(?:the\s+)?\b|incurred\s+prior\s+to|prior\s+to\s+the\s+date|force\s+majeure|hindered|prevented|beyond\s+(?:its|their|reasonable)\s+control|limited\s+liabilit\w*\s+compan\w*|liabilit\w*\s+compan\w*|no\s+person\s+other\s+than|exceed.{0,40}royalt|royalt.{0,40}exceed",
+        "target": r"liabilit\w*|damages?|losses|indemnif\w*|agreement|contract|fees?|amounts?",
+    },
+    "liquidated_damages": {
+        "verbs": r"liquidated\s+damages|as\s+liquidated|liquidated\s+amount|termination\s+payments?|termination\s+fees?|cancellation\s+fees?|payable\s+upon\s+terminat",
+        "anchors": ["liquidated damages", "liquidated", "damages", "specific performance"],
+        "needs_marker": False,
+        "markers": r"liquidated\s+damages|as\s+liquidated|liquidated\s+amount|agree\w*\s+to\s+pay|shall\s+pay|will\s+pay|amount\s+equal\s+to|\bpay\b",
+        "target": r"\$|dollar|amount|equal|sum|percent|salary|wages|fees?|damages",
+    },
+    "insurance": {
+        "verbs": r"insurance\b|insured\b|insurer\b",
+        "anchors": ["insurance", "insured", "coverage", "policies", "indemnification"],
+        "needs_marker": False,
+        "markers": r"obtain|maintain|carry|carries|procure|coverage|polic\w*|premium|named\s+insured|additional\s+insured",
+        "exclude": r"\b(tax|pension|employment)\s+insurance\b|sett\w*.{0,40}insurance\s+claims?|insurance\s+claims?.{0,40}settl\w*|cooperat\w*.{0,40}insurer|insurer.{0,40}cooperat\w*",
+    },
 
 }
 
