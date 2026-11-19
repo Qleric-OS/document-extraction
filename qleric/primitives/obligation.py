@@ -18,10 +18,14 @@ MODALS = {
     "may be entitled to": "may",
     "is entitled to": "may",
     "is permitted to": "may",
+    "has the right to": "may",
+    "have the right to": "may",
     "may": "may",
     "can": "may",
     "agrees not to": "shall",
     "agree not to": "shall",
+    "is not assignable": "shall",
+    "are not assignable": "shall",
     "agrees to": "shall",
     "agree to": "shall",
     "covenants": "shall",
@@ -52,7 +56,7 @@ DISQUALIFY = (r"effects?\s+of\s+terminat|consequences?\s+of|surviv\w*"
               r"|breach.{0,40}?terminat|insolven|deadlock|disagre"
               r"|exercis\w*\s+\w+\s+decision|decision[\s-]making"
                       r"|competent\w*|exclusive\s+rights?|reserved\s+rights?"
-                      r"|rights\s+granted|intellectual\s+property"
+                      r"|intellectual\s+property"
                       r"|whether\s+or\s+not|non[-\s]?compet\w*\s+agreement"
               r"|failure\s+to\s+(agree|cure|perform|pay)|cure\s+period"
               r"|shall\s+not\s+be\s+deemed|shall\s+be\s+deemed|construed\s+as"
@@ -107,6 +111,16 @@ CATEGORIES = {
         "needs_marker": False,
         "markers": r"at\s+least\s+as\s+favou?r\w*|more\s+favou?r\w*|no\s+less\s+favou?r\w*|most\s+favou?r\w*|equal\s+to\s+or\s+more\s+favou?r\w*|lowest\s+price",
         "target": r"terms?|provisions?|conditions?|pricing|prices?|rates?|rights?|licen[sc]e|treatment|nation|customer|fees?|charges?|distributo\w*|resell\w*|dealer|partner",
+    },
+    "anti_assignment": {
+        "verbs": r"assign(?!(?:s|ee|or)\b)\w*|delegat\w*|transfer\w*|convey\w*",
+        "anchors": ["anti-assignment", "assignment", "assignability", "assign",
+                    "successors and assigns", "delegation"],
+        "needs_marker": False,
+        "unmarked_ok": True,
+        "markers": r"consent|approval",
+        "exclude": r"(?:inure\s+to\s+the\s+benefit|binding\s+(?:up\s+)?on.{0,60}successors?)(?![^.]*?(?:shall\s+not|may\s+not|neither\b|without\s+consent|consent))|meanings?\s+(as\s+)?assigned\b",
+        "target": r"agreement|contract|rights?\b|obligations?|interests?|duties",
     },
 }
 
@@ -238,10 +252,14 @@ def find_obligations(span: str, category: str) -> list[dict]:
         marked_weak = bool(re.search(WEAK, sent, re.IGNORECASE))
         marked_strong = bool(re.search(STRONG, sent, re.IGNORECASE))
         negated = bool(re.search(NEGATION, sent, re.IGNORECASE))
-        marked_cat = bool(cfg.get("markers") and re.search(cfg["markers"], sent, re.IGNORECASE))
+        marked_cat = False
+        if cfg.get("markers"):
+            vm = re.search(cfg["verbs"], sent, re.IGNORECASE)
+            window = sent[max(0, vm.start() - 100):vm.end() + 100] if vm else sent
+            marked_cat = bool(re.search(cfg["markers"], window, re.IGNORECASE))
         if needs_marker and not (marked_weak or marked_strong):
             continue
-        if not needs_marker and not (marked_weak or marked_strong or negated or marked_cat):
+        if not needs_marker and not cfg.get("unmarked_ok") and not (marked_weak or marked_strong or negated or marked_cat):
             continue
         if re.search(DISQUALIFY, sent, re.IGNORECASE) and not marked_strong:
             continue
