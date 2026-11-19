@@ -35,7 +35,7 @@ MODALS = {
     "will": "shall",
 }
 NEGATION = (
-    r"not\b|never\b|n't\b|neither\b|\bnor\b|prohibit\w*\s+(from|against)"
+    r"not\b|never\b|n't\b|neither\b|\bnor\b|\bno\b|prohibit\w*\s+(from|against)"
     r"|\brefrain\w*\s+from|\bbarred\s+from"
 )
 
@@ -122,8 +122,22 @@ CATEGORIES = {
         "exclude": r"(?:inure\s+to\s+the\s+benefit|binding\s+(?:up\s+)?on.{0,60}successors?)(?![^.]*?(?:shall\s+not|may\s+not|neither\b|without\s+consent|consent))|meanings?\s+(as\s+)?assigned\b",
         "target": r"agreement|contract|rights?\b|obligations?|interests?|duties",
     },
-}
+    "covenant_not_to_sue": {
+        "verbs": r"\b(?:covenant\s+not\s+to\s+sue|sue|sued|suing|lawsuit|contest\w*|challeng\w*|attack\w*|institut\w*\s+(?:any\s+)?(?:suit|action|proceeding)|assert\w*\s+(?:any\s+)?claims?)\b",
+        "anchors": ["covenant not to sue", "covenant", "no suits", "not to sue",
+                    "no contest", "non-assert"],
+        "needs_marker": False,
+        "target": r"validity|ownership|title|patent\w*|trademark|marks?\b|intellectual\s+property|\bIP\b|rights?\b|suit|lawsuits?|litigation",
+    },
+    "non_disparagement": {
+        "verbs": r"disparag\w*|defam\w*|libel|slander|derogatory|disparagement",
+        "anchors": ["non-disparagement", "non-disparage", "disparagement",
+                    "mutual non-disparagement", "defamation"],
+        "needs_marker": False,
+        "exclude": r"\bus\w*\s+(?:of\s+|the\s+)*(?:licensed|compan\w*|licensor|marks?\b|materials?|name\b|logo|goodwill)\b",
+    },
 
+}
 
 def _sentences(val: str) -> list[str]:
     """Split into sentences. Mirrors local._sentences; kept local to avoid a
@@ -278,7 +292,7 @@ def find_obligations(span: str, category: str) -> list[dict]:
     return out
 
 
-_NEGATED = (r"\bnot\b|\bnever\b|n't\b|\bneither\b|\bnor\b"
+_NEGATED = (r"\bnot\b|\bnever\b|n't\b|\bneither\b|\bnor\b|\bno\b"
              r"|prohibit\w*\s+(?:from|against)|\brefrain\w*\s+from"
              r"|\bbarred\s+from")
 
