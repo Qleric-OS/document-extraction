@@ -159,7 +159,7 @@ FIELDS = [
     {"name": "agreement_date", "strategy": "local", "hint": "date the agreement was signed",
      "anchors": ["agreement date", "dated as of", "dated", "date of agreement",
                  "entered into", "effective date"],
-     "normalize": r"([0-9]{1,2}[/\-.][0-9]{1,2}[/\-.][0-9]{2,4}|[A-Z][a-z]+ [0-9]{1,2}(st|nd|rd|th)?\s*,?\s*20[0-9]{2}|[0-9]{1,2}(st|nd|rd|th) day of [A-Z][a-z]+,? 20[0-9]{2})"},
+     "normalize": r"([0-9]{1,2}[/\-.][0-9]{1,2}[/\-.][0-9]{2,4}|[A-Z][a-z]+ [0-9]{1,2}(?:st|nd|rd|th)?\s*,?\s*20[0-9]{2}|[0-9]{1,2}(?:st|nd|rd|th) day of [A-Z][a-z]+,? 20[0-9]{2})"},
     {"name": "effective_date", "strategy": "local", "hint": "when the agreement takes effect",
      "anchors": ["effective date", "commence", "term shall begin", "in effect"],
      "normalize": r"([0-9]{1,2}[/\-.][0-9]{1,2}[/\-.][0-9]{2,4}|[A-Z][a-z]+ [0-9]{1,2},? 20[0-9]{2})"},
