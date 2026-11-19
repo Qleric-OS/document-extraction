@@ -100,6 +100,14 @@ CATEGORIES = {
         "needs_marker": False,
         "exclude": r"reserv\w*|governmental\s+(authoriz|approvals?)|licenses?,\s+permits",
     },
+    "most_favored_nation": {
+        "verbs": r"most\s+favou?r\w*|no\s+less\s+favou?r\w*|at\s+least\s+as\s+favou?r\w*|more\s+favou?r\w*|equal\s+to\s+or\s+more\s+favou?r|favou?red\s+nation|lowest\s+price|\bMFN\b",
+        "anchors": ["most favored nation", "most favored", "MFN", "favored nation",
+                    "favored customer", "no less favorable"],
+        "needs_marker": False,
+        "markers": r"at\s+least\s+as\s+favou?r\w*|more\s+favou?r\w*|no\s+less\s+favou?r\w*|most\s+favou?r\w*|equal\s+to\s+or\s+more\s+favou?r\w*|lowest\s+price",
+        "target": r"terms?|provisions?|conditions?|pricing|prices?|rates?|rights?|licen[sc]e|treatment|nation|customer|fees?|charges?|distributo\w*|resell\w*|dealer|partner",
+    },
 }
 
 
@@ -206,6 +214,8 @@ def find_obligations(span: str, category: str) -> list[dict]:
     a `target` pattern additionally require the solicitation target class in
     the granting sentence (e.g. employee words for no_solicit_employees, so
     "solicit any Merchants" and "unsolicited e-mail" do not grant).
+    Categories with a `markers` pattern accept those as grant markers too
+    (e.g. parity phrasing "at least as favorable" for most_favored_nation).
     """
     cfg = CATEGORIES[category]
     needs_marker = cfg.get("needs_marker", True)
@@ -228,9 +238,10 @@ def find_obligations(span: str, category: str) -> list[dict]:
         marked_weak = bool(re.search(WEAK, sent, re.IGNORECASE))
         marked_strong = bool(re.search(STRONG, sent, re.IGNORECASE))
         negated = bool(re.search(NEGATION, sent, re.IGNORECASE))
+        marked_cat = bool(cfg.get("markers") and re.search(cfg["markers"], sent, re.IGNORECASE))
         if needs_marker and not (marked_weak or marked_strong):
             continue
-        if not needs_marker and not (marked_weak or marked_strong or negated):
+        if not needs_marker and not (marked_weak or marked_strong or negated or marked_cat):
             continue
         if re.search(DISQUALIFY, sent, re.IGNORECASE) and not marked_strong:
             continue
