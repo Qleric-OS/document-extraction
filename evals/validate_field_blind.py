@@ -62,7 +62,23 @@ def load_doc(relpath: str) -> Document | None:
 
 
 def ungradeable(exp: str) -> bool:
-    return (not exp or exp == "[]" or "[*" in exp or "WHICH" in exp.upper())
+    return (not exp or "[]" in exp or "[*" in exp or "WHICH" in exp.upper()
+            or "_" in exp or "[●]" in exp or exp.lstrip().startswith(","))
+
+
+def _truth_variants(exp: str) -> list[str]:
+    """CUAD date columns store alternative phrasings as a list literal
+    ("['8th day of May 2014', 'May 8, 2014']"). A hit on any variant counts."""
+    exp = exp.strip()
+    if exp.startswith("[") and exp.endswith("]"):
+        try:
+            import ast as _ast
+            vals = _ast.literal_eval(exp)
+            if isinstance(vals, list):
+                return [str(v).strip() for v in vals if str(v).strip()]
+        except (ValueError, SyntaxError):
+            pass
+    return [exp]
 
 
 def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = False,
@@ -115,7 +131,8 @@ def main(field_name: str, column: str, n: int = 20, seed: int = 7, flag: bool = 
             tn += (not found) and (not want)
             fn += (not found) and want
         else:
-            hit = bool(match(field_name, val, exp))
+            exp_variants = _truth_variants(exp)
+            hit = any(match(field_name, val, e) for e in exp_variants)
         total += 1
         hits += hit
         mech = ",".join(res.get("meta", {}).get("debug", {}).get("mechanisms", {}).get(field_name, []))
