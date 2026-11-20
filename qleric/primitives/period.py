@@ -71,3 +71,55 @@ def clean_notice(raw: str | None) -> str | None:
     if _re.search(r"breach|cure|cured|curing|default\w*|failure\s+to", raw, _re.I):
         return None
     return _tidy_period(raw)
+
+def term_end(text: str, start_value: str | None, agree_value: str | None = None) -> tuple[str, str] | None:
+    """Compute an end date from a term duration + start value.
+
+    Returns (value, term span) or None. Shapes: "initial term of N units"
+    (start defaults to the effective value) and "N unit anniversary of
+    [the Effective Date | date hereof]" (start follows the named anchor:
+    effective or agreement value). Only initial-term durations; renewals
+    do not move the expiration truth. Callers must flag output computed.
+    """
+    from qleric.primitives import date as _D
+    nums = "|".join(sorted(_NUM_WORDS, key=len, reverse=True)) + r"|\d+"
+    num = r"\b((?:" + nums + r"))(?:\s*\(\d+\))?\s*(years?|months?|weeks?|days?)\b"
+    gap_veto = (r"notic|non-renewal|terminat|cure|breach|prior\s+the\s+end|renew|extend|prolong|"
+                r"additional|further|successor|paid|payable|payment|invoice|at\s+least")
+    sent_veto = r"notic|non-renewal|paid|payable|payment|invoice"
+    termhead = (r"(?<!renewal\s)(?<!extended\s)(?<!successor\s)(?:initial\s+term\b|"
+                r"term\s+of\s+(?:this|the)\s+agreement\b[^.?!]{0,60}?(?:shall\s+(?:be|have)|\bis\b|means)\b|"
+                r"term\s+shall\s+be\b|term\s+is\b|"
+                r"remain\s+in\s+full\s+force\s+and\s+effect\b|continue\s+in\s+full\s+force\s+and\s+effect\b)")
+    cands: list[tuple[str, str, str]] = []  # (kind, start, span)
+    for m in _re.finditer(num + r"\s+anniversary\s+of\s+(.{0,60}?)(\.|;|$)", text, _re.IGNORECASE):
+        tail = m.group(3)
+        if _re.search(gap_veto, m.group(0), _re.I):
+            continue
+        if _re.search(r"effective\s+date", tail, _re.I):
+            cands.append(("anniv-eff", start_value or "", m.group(0)))
+        elif _re.search(r"date\s+hereof|execution|signing", tail, _re.I):
+            cands.append(("anniv-agr", agree_value or "", m.group(0)))
+    for m in _re.finditer(termhead + r"[^.?!]{0,150}?" + num, text, _re.IGNORECASE):
+        if _re.search(gap_veto, m.group(0), _re.I):
+            continue
+        s = max(text.rfind(".", 0, m.start()), text.rfind(";", 0, m.start()),
+                text.rfind("\n", 0, m.start())) + 1
+        nx = min([x for x in (text.find(".", m.end()), text.find(";", m.end()),
+                              text.find("\n", m.end())) if x >= 0] or [len(text)])
+        sent = text[s:nx]
+        if _re.search(sent_veto, sent, _re.I):
+            continue
+        cands.append(("initial-agr", agree_value or "", sent.strip()))
+        cands.append(("initial-eff", start_value or "", sent.strip()))
+    for kind, start_value, span in cands:
+        start = _D.parse_date(start_value)
+        if not start:
+            continue
+        m2 = _re.search(num, span, _re.IGNORECASE)
+        if not m2:
+            continue
+        n = _NUM_WORDS.get(m2.group(1).lower(), m2.group(1))
+        y, mo, d = _D.add_period(start[0], start[1], start[2], int(n), m2.group(2))
+        return (f"{mo}/{d}/{y}", span.strip())
+    return None

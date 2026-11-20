@@ -170,13 +170,47 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
         rej = f.get("reject")
         if rej and _re.search(rej, value, _re.IGNORECASE):
             continue  # known trap shape (year range as phone): skip span
-        if value in claimed_values:
+        if value in claimed_values and not f.get("share_value"):
             continue  # same value already claimed by a higher scorer
         hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
         results[name] = {"value": value, "verbatim": span.strip(),
                          **hit, "grounded": True, "source": "local",
                          "_mechanisms": sorted(mechs)}
         claimed_values.add(value)
+    for f in pending:
+        # Computed values (term arithmetic): overrides extraction when it fires
+        # (duel-tested); literal perpetuity always wins. Cites the term clause;
+        # the start clause is cited via the effective_date result. Flagged computed.
+        if f.get("compute") != "term_end":
+            continue
+        from qleric.primitives import period as _P
+        cur = (results.get(f["name"]) or {}).get("value")
+        if cur is not None and _re.match(r"(?i)^\s*perpetu\w*\s*$", cur):
+            continue  # literal perpetuity beats arithmetic
+        start = (results.get("effective_date") or {}).get("value")
+        agree = (results.get("agreement_date") or {}).get("value")
+        if not start and not agree:
+            # Single-field queries lack siblings: mine the recital directly
+            # with the agreement pattern (entered into / dated as of).
+            from qleric.packs.contract import FIELDS as _CF
+            af = next((x for x in _CF if x.get("name") == "agreement_date"), None)
+            if af and af.get("normalize"):
+                for rm in _re.finditer(r"(?i)(?:entered into|dated|effective)\s+as\s+of\b.{0,80}",
+                                       doc.body_text):
+                    dm = _re.search(af["normalize"], rm.group(0), _re.IGNORECASE)
+                    if dm:
+                        agree = dm.group(0)
+                        break
+        if not start and not agree:
+            continue
+        got = _P.term_end(doc.body_text, start, agree)
+        if not got:
+            continue
+        value, span = got
+        hit = grounding.locate(span.splitlines()[0], doc.pages) or {}
+        results[f["name"]] = {"value": value, "verbatim": span.strip(),
+                             **hit, "grounded": True, "source": "local",
+                             "computed": True, "_mechanisms": ["compute"]}
 
 
 def _score_span(span: str, f: dict) -> tuple[float, set]:
