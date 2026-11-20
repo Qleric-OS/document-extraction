@@ -65,6 +65,14 @@ def match(name: str, got: str | None, exp) -> bool | None:
         return g == e or g in e or e in g
     if "date" in name:  # compare as parsed dates, not strings
         import datetime as _dt
+        def _datecanon(v: str) -> str:
+            import re as _re3
+            v = _re3.sub(r"(\d{1,2})(?:st|nd|rd|th)\s+day\s+of\s+([A-Za-z]+),?\s*(\d{4})",
+                         r"\2 \1, \3", v.strip(), flags=_re3.IGNORECASE)
+            v = _re3.sub(r"(\d{1,2})(st|nd|rd|th)\b", r"\1", v)
+            v = _re3.sub(r",\s*(\d)", r", \1", v)
+            return v
+        got, exp = _datecanon(got), _datecanon(str(exp))
         fmts = ("%Y-%m-%d", "%d.%m.%Y", "%m/%d/%Y", "%d/%m/%Y",
                 "%m/%d/%y", "%d.%m.%y", "%B %d, %Y", "%b %d, %Y")
         for fmt in fmts:

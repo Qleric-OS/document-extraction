@@ -138,6 +138,8 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
                     scored.append((TUNE["match_first_score"], f["name"], best, {"match_first"}))
             continue
         for span in local.candidates(doc.body_text):
+            if f.get("reject_span") and _re.search(f["reject_span"], span):
+                continue  # known trap span (filing metadata): skip before scoring
             s, mechs = _score_span(span, f)
             if s > TUNE["span_threshold"]:
                 scored.append((s, f["name"], span, mechs))
