@@ -20,3 +20,5 @@ samples/real/*.pdf
 !samples/real/.gitkeep
 # Local validation truth (your private expected values)
 evals/real_truth_local.py
+# Agent scaffolding (skills, workflows — local tooling, never committed)
+.agents/
