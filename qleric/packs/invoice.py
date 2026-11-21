@@ -26,8 +26,10 @@ FIELDS = [
     {"name": "tax_amount", "strategy": "local", "hint": "tax or VAT amount",
      "anchors": ["tax", "vat", "gst", "sales tax", "vat included", "tax included"],
      "normalize": MONEY},
-    {"name": "seller", "strategy": "llm", "hint": "selling company name"},
-    {"name": "buyer", "strategy": "llm", "hint": "buying company name"},
+    {"name": "seller", "strategy": "llm", "hint": "selling company (the vendor issuing this invoice. If no labeled vendor block exists, the seller is the bare company name at the very top of page 1, the letterhead line. NEVER the BILL TO / SHIP TO party; ignore filing metadata headers like Source: lines)",
+     "retrieve": ["seller", "vendor", "sold by", "remit to", "supplier", "invoice from"]},
+    {"name": "buyer", "strategy": "llm", "hint": "buying company (the BILL TO / SHIP TO party; NEVER the vendor, letterhead, or Source: filing header)",
+     "retrieve": ["buyer", "bill to", "ship to", "sold to", "customer", "client", "invoice to"]},
     {"name": "line_items", "strategy": "table", "hint": "line items from item tables",
      "columns": ["description", "qty", "quantity", "price", "amount", "total"]},
 ]

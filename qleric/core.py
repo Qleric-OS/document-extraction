@@ -289,6 +289,9 @@ def _targeted_context(doc: Document, llm_fields: list[dict],
     so threaded servers can't cross-talk (gunicorn sync workers were safe
     either way, but explicit beats safe-by-accident).
     """
+    filing_src = _re.compile(r"(?i)^\s*source\s*:.*\b(10-K|10-Q|8-K|S-1|20-F|485BPOS)\b.*$")
+    def _clean(t: str) -> str:
+        return "\n".join(ln for ln in t.splitlines() if not filing_src.match(ln))
     windows: list[tuple[float, str, str]] = []  # (score, field, text)
     per_field: dict[str, dict] = {}
     for f in llm_fields:
@@ -297,8 +300,9 @@ def _targeted_context(doc: Document, llm_fields: list[dict],
         for page in doc.pages:
             if page.sparse:
                 continue
+            text = _clean(page.text)
             for m in _re.finditer(r".{0,600}(?:" + "|".join(map(_re.escape, keys)) + r").{0,600}",
-                                  page.text, _re.IGNORECASE | _re.DOTALL):
+                                  text, _re.IGNORECASE | _re.DOTALL):
                 seg = " ".join(m.group(0).split())
                 score = sum(k.lower() in seg.lower() for k in keys)
                 windows.append((score, f["name"], f"[Page {page.number}] {seg}"))
@@ -312,12 +316,22 @@ def _targeted_context(doc: Document, llm_fields: list[dict],
         out.append(w)
         total += len(w)
         used[name] = used.get(name, 0) + 1
+    for f in llm_fields:
+        if used.get(f["name"], 0) > 0:
+            continue
+        for page in doc.pages:  # starved field: letterhead zone (bare seller names live here)
+            if page.sparse:
+                continue
+            head = " ".join(_clean(page.text).split()[:120])
+            out.append(f"[Page {page.number} head] {head}")
+            used[f["name"]] = used.get(f["name"], 0) + 1
+            break
     for name, st in per_field.items():
         st["sent"] = used.get(name, 0)
     stats = {"budget": budget, "chars": total,
              "fallback": not bool(out), "fields": per_field}
     if not out:  # nothing scored: full doc fallback (capped)
-        out = [f"[Page {p.number}]\n{p.text}" for p in doc.pages if not p.sparse]
+        out = [f"[Page {p.number}]\n{_clean(p.text)}" for p in doc.pages if not p.sparse]
         return "\n\n".join(out)[:100_000], stats
     return "\n\n---\n\n".join(out), stats
 
