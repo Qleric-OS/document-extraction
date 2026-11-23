@@ -85,6 +85,13 @@ CATEGORIES = {
         "anchors": ["exclusivity", "exclusive", "sole source", "single source",
                     "preferred provider"],
         "needs_marker": False,
+        # G1: remedies boilerplate is not a commercial-exclusivity grant.
+        # Cumulative/substitution phrasing, or sole-and-exclusive remedy
+        # caps (warranty/liability remedy limits). Sentence-scoped.
+        # G3: explicit denials ("is not exclusive", "does not agree").
+        # G4: jurisdiction carve-outs ("exclusive jurisdiction").
+        "exclude": r"cumulat\w*|not\s+in\s+substitution|sole\s+and\s+exclusive"
+                   r"|does\s+not\s+agree|is\s+not\s+exclusive|no\s+exclusivity\s+granted"
     },
     "no_solicit_customers": {
         "verbs": r"solicit\w*|recruit\w*|poach|hire\s+away",

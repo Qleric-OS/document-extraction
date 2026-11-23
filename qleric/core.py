@@ -121,6 +121,31 @@ def _offline_pass(doc: Document, fields: list[dict], results: dict) -> None:
     _assign_spans(doc, pending, results)
 
 
+def _is_stated(value: str | None, *refs: str | None) -> bool:
+    """A grounded extracted date that isn't the start date states the answer.
+
+    Term arithmetic may fill gaps but must not clobber an explicitly stated
+    end date (L2 stated pairs: stated beats computed). Unparseable values
+    fall through so compute can still try.
+    """
+    from qleric.primitives import date as _D
+    try:
+        v = _D.parse_date(value) if value else None
+    except Exception:
+        return False
+    if v is None:
+        return False
+    for r in refs:
+        if not r:
+            continue
+        try:
+            if _D.parse_date(r) == v:
+                return False  # merely echoing the start date
+        except Exception:
+            continue
+    return True
+
+
 def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
     """Global best-assignment: highest score claims each span first."""
     if not pending:
@@ -143,7 +168,10 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
             s, mechs = _score_span(span, f)
             if s > TUNE["span_threshold"]:
                 scored.append((s, f["name"], span, mechs))
-    scored.sort(reverse=True)
+    # Stable on score only: ties keep candidate (document) order instead of
+    # reverse-lexicographic span text, which systematically preferred
+    # lowercased spans (noise artifacts) over capitalized ones.
+    scored.sort(key=lambda t: t[0], reverse=True)
     claimed_values: set[str] = set()
     for _, name, span, mechs in scored:
         if name in results:
@@ -203,6 +231,8 @@ def _assign_spans(doc: Document, pending: list[dict], results: dict) -> None:
                         break
         if not start and not agree:
             continue
+        if cur is not None and _is_stated(cur, start, agree):
+            continue  # a stated end date beats arithmetic; compute only fills gaps
         got = _P.term_end(doc.body_text, start, agree)
         if not got:
             continue

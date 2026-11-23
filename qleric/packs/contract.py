@@ -155,6 +155,24 @@ _RENEW_ALT = [(_RENEW_VETO + r"(" + _RENEW_PRE
                + r"(?:(?!\binitial\s+term\b)[\s\S]){0,120}?" + _RENEW_DUR + r")"),
               r"(" + _RENEW_SPECIAL + r")",
               r"\b(perpetu\w*)"]
+_CAP_DELTA = _re.compile(
+    r"(?i)\b(?:increased|decreased|adjusted|raised|lowered)\b"
+    r".{0,60}?\bfrom\b.{0,100}?\bto\b.{0,100}?\$")
+_cap_verdict = verdict_for("cap_on_liability")
+
+
+def _clean_cap(raw: str | None) -> str | None:
+    """Cap verdict: an in-clause change statement naming its new value counts.
+
+    Direction-neutral (increase or decrease); requires the post-"to" amount,
+    so bare deltas ("increased by $5M" — no new total stated) still fall
+    through to P5, which rejects them. Never touches shared P5 machinery.
+    """
+    if raw and _CAP_DELTA.search(raw):
+        return raw
+    return _cap_verdict(raw)
+
+
 FIELDS = [
     {"name": "agreement_date", "strategy": "local", "hint": "date the agreement was signed",
      "anchors": ["agreement date", "dated as of", "dated", "date of agreement",
@@ -173,7 +191,7 @@ FIELDS = [
      "share_value": True},
     {"name": "expiration_date", "strategy": "local", "hint": "when the agreement ends",
      "anchors": ["expiration date", "terminate on", "expires", "end of the term", "remain in effect until",
-                 "perpetual"],
+                 "perpetual", "extended", "extension", "expiry"],
      "normalize": r"(\bperpetual\b|(?<![\d/\-])(?:0?[1-9]|1[0-2])[/\-.][0-9]{1,2}[/\-.](?:\d{2}|(?:19|20)\d{2})(?![\d/\-])|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.? [0-9]{1,2},? (?:19|20)[0-9]{2})",
      "reject": r"^\d{1,2}\.\d{1,2}\.\d{2}$",
      "reject_span": r"(?i)^\s*source:",
@@ -283,8 +301,15 @@ FIELDS = [
      "clean": verdict_for("license_grant"),
      "fallback": functools.partial(P5_find_unheaded, category="license_grant"),
      "retrieve": ["license", "grant of rights", "authorized use", "hereby grants"]},
-    {"name": "exclusivity", "strategy": "llm", "escalate": True,
+    {"name": "exclusivity", "strategy": "local", "section": True,
      "hint": "exclusivity obligations, quote the clause or null",
+     "anchors": P5_CATEGORIES["exclusivity"]["anchors"],
+     "heading": r"(?i)^\s*(\d+[\.\)]|article\s+\d+|section\s+\d+|[a-z]\.)\s*",
+     "exclude": None,
+     "reassemble": False,
+     "normalize": None,
+     "clean": verdict_for("exclusivity"),
+     "fallback": functools.partial(P5_find_unheaded, category="exclusivity"),
      "retrieve": ["exclusiv", "sole", "only", "solely"]},
     {"name": "most_favored_nation", "strategy": "local", "section": True,
      "hint": "most favored nation / parity pricing clause, quote the clause or null",
@@ -341,9 +366,9 @@ FIELDS = [
      "exclude": r"(?i)\bdefinitions?\b",
      "threshold": 15.0,
      "reassemble": True,
-     "member": r"(?i)\b(?:liab\w*|indemnif\w*)\b.{0,120}?\b(?:shall|will|may|must|agre\w*|covenant|never|not|without|neither|nor|no|exceed|cap|limited|maximum|uncapped|unlimited|consent)\b|\b(?:shall|will|may|must|agre\w*|covenant|never|not|without|neither|nor|no|exceed|cap|limited|maximum|uncapped|unlimited|consent)\b.{0,120}?\b(?:liab\w*|indemnif\w*)\b",
+     "member": r"(?i)\b(?:liab\w*|indemnif\w*)\b.{0,120}?\b(?:shall|will|may|must|agre\w*|covenant|never|not|without|neither|nor|no|exceed|cap|limited|maximum|uncapped|unlimited|consent)\b|\b(?:shall|will|may|must|agre\w*|covenant|never|not|without|neither|nor|no|exceed|cap|limited|maximum|uncapped|unlimited|consent)\b.{0,120}?\b(?:liab\w*|indemnif\w*)\b|\b(?:liab\w*|cap)\b.{0,120}?\b(?:increased|decreased|adjusted|raised|lowered)\b",
      "normalize": None,
-     "clean": verdict_for("cap_on_liability"),
+     "clean": _clean_cap,
      "fallback": functools.partial(P5_find_unheaded, category="cap_on_liability"),
      "retrieve": ["limitation of liability", "cap on liability", "shall not exceed", "consequential damages", "in no event", "uncapped"]},
     {"name": "liquidated_damages", "strategy": "local", "section": True,
