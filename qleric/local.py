@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 
 from .primitives.defterm import resolve_reference as resolve_reference  # moved here; re-exported for core + external callers
+from .layout.sentences import _sentences  # single source (moved verbatim)
+from .layout.windows import candidates  # moved verbatim; stdlib only
 
 try:
     from rapidfuzz import fuzz
@@ -36,19 +38,6 @@ TUNE = {
     "anchor_similarity": 30.0,   # match_first anchored preference floor
 }
 
-def candidates(text: str) -> list[str]:
-    """Candidate spans: lines, 2-line windows, and clause windows for long lines."""
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    spans = list(lines)
-    spans += [" ".join(lines[i:i + 2]) for i in range(len(lines) - 1)]
-    for ln in lines:
-        if len(ln) > TUNE["long_line"]:  # paragraph-embedded values: split on clause boundaries
-            for part in re.split(r";|\(|\)|, the |, and |(?<!\d)\. ", ln):
-                part = part.strip()
-                if len(part) > TUNE["min_window"]:
-                    spans.append(part)
-    return spans
-
 
 def _label(span: str) -> str:
     """Label part of a span: strip trailing values/ids, keep the words."""
@@ -56,6 +45,7 @@ def _label(span: str) -> str:
     s = re.sub(r"\s*[$€£]?\s*[0-9][0-9,./\-]*\s*$", "", s)  # trailing number/date
     s = re.sub(r"\s*[:#]\s*[A-Za-z0-9\-/]*$", "", s)  # trailing :id (only if label remains)
     return s if re.search(r"[a-zA-Z]", s or "") else span
+
 
 def score(span: str, anchors: list[str]) -> float:
     """Full-string ratio on the label: substring luck (bill no vs Bill date)
@@ -87,11 +77,6 @@ def find_span(text: str, anchors: list[str], pattern: str,
         if re.search(pattern, s, re.IGNORECASE) and _ok(s):
             return s
     return None
-
-def _sentences(val: str) -> list[str]:
-    """Split a section into sentences: newlines, semicolons, non-numeric periods."""
-    parts = re.split(r"\n+|;|(?<!\d)\.\s+", val)
-    return [p.strip(" .") for p in parts if len(p.strip(" .")) > 3]
 
 
 def _has_grant(val: str, qualify, strong, disqualify) -> bool:
