@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import re
 
+from qleric.local import _sentences  # single source (local feeds find_section)
+
+
 # Closed modal map. Unlisted modals never qualify.
 MODALS = {
     "reserves the right to": "may",
@@ -168,12 +171,6 @@ CATEGORIES = {
     },
 
 }
-
-def _sentences(val: str) -> list[str]:
-    """Split into sentences. Mirrors local._sentences; kept local to avoid a
-    primitives->local import cycle (local imports primitives.defterm)."""
-    parts = re.split(r"\n+|;|(?<!\d)\.\s+", val)
-    return [p.strip(" .") for p in parts if len(p.strip(" .")) > 3]
 
 
 def _find_modal(sentence: str) -> tuple[str, str] | None:
