@@ -128,7 +128,10 @@ Misses feed back into the generator or pack anchors. No false grounds recorded t
 
 ## Repo map
 
-- `qleric/` — core: `documents` (parse), `grounding` (prove it), `local` (spans), `highlight` (bboxes), `lm` (BYOK), `costs` (ledger), `mcp` (tools)
+- `qleric/ingest/` — portable intake: `parse` (+`pdf`, `docx`), `types`, `provenance`, `columns`, `ocr`, `images`, `scripts`; `documents` is a backward-compat shim
+- `qleric/layout/` — portable sections: `find_section`, `split_sentences`, `windows`, `types`; stdlib only, scorer injected
+- `qleric/` — core: `grounding` (prove it), `local` (spans), `highlight` (bboxes), `lm` (BYOK), `costs` (ledger), `mcp` (tools)
 - `qleric/packs/` — `invoice`, `resume`, `pii`, `contract`
- - `evals/` — `generate.py`, `eval.py`, `validate_real.py`, `validate_field_blind.py` (blind protocol, value+flag modes), `real_truth.py` (your template)
+ - `evals/` — `generate.py`, `eval.py`, `bench_ingest.py`, `validate_real.py`, `validate_field_blind.py` (blind protocol, value+flag modes), `real_truth.py` (your template)
+- `tests/` — `test_ingest.py`, `test_layout.py` (hermetic circuit, no CUAD/network)
 - `api.py` — stateless Flask; `samples/golden/` — hand-checked demo docs; `samples/corpus/` — 90-case synthetic eval set (`real/` is gitignored private docs)
