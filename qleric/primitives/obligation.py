@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from qleric.local import _sentences  # single source (local feeds find_section)
+from qleric.layout.sentences import _sentences  # single source (layout owns text segmentation)
 
 
 # Closed modal map. Unlisted modals never qualify.

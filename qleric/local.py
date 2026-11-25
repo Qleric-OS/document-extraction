@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 
 from .primitives.defterm import resolve_reference as resolve_reference  # moved here; re-exported for core + external callers
-from .layout.sentences import _sentences  # single source (moved verbatim)
+from .layout.sentences import _sentences as _sentences  # single source (moved verbatim)
+from .layout.sections import find_section as find_section  # single source (moved verbatim + scorer)
 from .layout.windows import candidates  # moved verbatim; stdlib only
 
 try:
@@ -76,108 +77,6 @@ def find_span(text: str, anchors: list[str], pattern: str,
     for s in candidates(text):  # bare value fallback (no label at all)
         if re.search(pattern, s, re.IGNORECASE) and _ok(s):
             return s
-    return None
-
-
-def _has_grant(val: str, qualify, strong, disqualify) -> bool:
-    """A granting sentence names termination + a convenience marker, no disqualifier.
-
-    Sentence scope stops tail boilerplate ("termination for any reason shall
-    not release...") from masquerading as a grant, and stops effects-adjacent
-    text from poisoning a real grant elsewhere in the section.
-    """
-    for s in _sentences(val):
-        if not re.search(r"terminat\w*", s, re.IGNORECASE):
-            continue
-        marked = (strong and re.search(strong, s, re.IGNORECASE)) or (
-            qualify and re.search(qualify, s, re.IGNORECASE))
-        if not marked:
-            continue
-        if disqualify and re.search(disqualify, s, re.IGNORECASE):
-            continue
-        return True
-    return False
-
-
-def find_section(text: str, field: dict, stop_anchors: list[str] | None = None,
-                 stop_fields: list[dict] | None = None) -> str | None:
-    """Section body: heading + contiguous lines until a rival heading,
-    plus doc-wide reassembly of member-pattern lines (shuffle-proof).
-
-    Reads everything from the field dict: anchors, threshold, member,
-    heading, exclude, qualify, reassemble. Only stop anchors stay external
-    (they depend on sibling fields, not this one).
-    """
-    anchors = field.get("anchors", [])
-    threshold = field.get("threshold", TUNE["span_threshold"])
-    member = field.get("member")
-    heading = field.get("heading")
-    exclude = field.get("exclude")
-    qualify = field.get("qualify")
-    strong = field.get("qualify_strong")
-    disqualify = field.get("disqualify")
-    reassemble = field.get("reassemble", True)
-    if stop_anchors is None:
-        if stop_fields is None:
-            # Unreachable from query() (core always passes siblings), kept for
-            # direct find_section callers.
-            from .packs import RESUME_FIELDS  # legacy default
-            stop_fields = RESUME_FIELDS
-        stop_anchors = [a for f in stop_fields if f.get("section")
-                        for a in f.get("anchors", [])]
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    starts: list[tuple[int, str]] = [(i, ln) for i, ln in enumerate(lines)]
-    for i, ln in enumerate(lines):  # paragraph-embedded headings: clause windows can start
-        if len(ln) > TUNE["long_line"]:
-            for part in re.split(r";|\(|\)|, the |, and |(?<!\d)\. ", ln):
-                part = part.strip()
-                if len(part) > TUNE["min_window"]:
-                    starts.append((i, part))  # origin line index preserves doc order
-    cands: list[tuple[tuple[int, float], int, str]] = []
-    for pos, (origin, ln) in enumerate(starts):
-        if exclude and re.search(exclude, ln, re.IGNORECASE):
-            continue  # false friend: never a section start
-        if heading and not re.search(heading, ln):
-            continue  # unheaded span: not a section start (body handled by member)
-        s = score(ln, anchors)
-        if s <= threshold:
-            continue
-        density = 0
-        if member:
-            own = [t for o, t in starts[pos:pos + 4] if o == origin]
-            density = len(re.findall(member, " ".join(own), re.IGNORECASE))
-        cands.append(((density, s), origin, ln))
-    cands.sort(reverse=True)  # densest, highest-scoring first
-    for _, origin, span in cands:
-        body = []
-        best_pos = next((p for p, (o, t) in enumerate(starts) if o == origin and t == span), -1)
-        for o2, t2 in starts[best_pos + 1:]:
-            if o2 != origin:
-                break
-            body.append(t2)
-        for i, ln in enumerate(lines):
-            if i <= origin:
-                continue  # heading line itself; body follows (or window covers it)
-            if score(ln, stop_anchors) > TUNE["stop_threshold"] and score(ln, anchors) <= score(ln, stop_anchors):
-                break  # a different section starts
-            body.append(ln)
-        if member:
-            # filter contiguous body to member lines (keeps section identity)
-            body = [ln for ln in body if re.search(member, ln, re.IGNORECASE)]
-            if reassemble:  # shuffled docs: pull scattered members doc-wide
-                seen = set(body)
-                for ln in lines:
-                    if ln not in seen and re.search(member, ln, re.IGNORECASE):
-                        body.append(ln)
-                        seen.add(ln)
-                order = {ln: i for i, ln in enumerate(lines)}
-                body.sort(key=lambda ln: order.get(ln, 0))
-        val = "\n".join([span, *body]) if body else span
-        if disqualify and not _has_grant(val, qualify, strong, disqualify):
-            continue  # no granting sentence: conditional/cause/effects only
-        if not disqualify and qualify and not re.search(qualify, val, re.IGNORECASE):
-            continue  # right shape, wrong substance: try next heading
-        return val
     return None
 
 

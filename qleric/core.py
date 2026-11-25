@@ -11,6 +11,7 @@ from . import grounding, highlight, local
 from .documents import Document
 from .lm import DEFAULT_BIG_MODEL, LMError, chat, has_key
 from .local import TUNE
+from .layout.sections import find_section
 from .packs.pii import EXCLUDE
 SYSTEM = ("You are a precise document reader. Extract the requested fields. "
           "For each field return value, verbatim (exact substring from the text), "
@@ -92,7 +93,7 @@ def _offline_pass(doc: Document, fields: list[dict], results: dict) -> None:
             continue
         if strategy == "local" and f.get("section"):
             stops = [x for x in fields if x.get("section")] or None
-            span = local.find_section(doc.body_text, f, stop_fields=stops)
+            span = find_section(doc.body_text, f, stop_fields=stops, scorer=local.score)
             value = None
             if span:
                 value = local.normalize(f.get("normalize"), span, f.get("strip"),

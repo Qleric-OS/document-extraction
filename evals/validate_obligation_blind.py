@@ -19,7 +19,8 @@ import zlib
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 from qleric import grounding
-from qleric.local import find_section
+from qleric.layout.sections import find_section
+from qleric.local import score as _fuzzy
 from qleric.primitives.obligation import CATEGORIES, find_obligations
 from evals.validate_field_blind import CUAD, load_doc, ungradeable  # noqa: E402
 
@@ -76,7 +77,7 @@ def main(per_category: int = 25, seed: int = 7) -> None:
                 stat["skipped"] += 1
                 continue
             text = "\n".join(p.text for p in doc.pages)
-            span = find_section(text, field, stop_fields=[field])
+            span = find_section(text, field, stop_fields=[field], scorer=_fuzzy)
             found = None
             if span:
                 for ob in find_obligations(span, category):
