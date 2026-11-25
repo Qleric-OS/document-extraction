@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     ext = args.file.rsplit(".", 1)[-1].lower()
     try:
-        doc = parse(data, ext)
+        doc = parse(data, ext, os.environ.get("OCR_LANG", "eng"))
     except ValueError as e:
         print(f"qleric: {e}", file=sys.stderr)
         return 2

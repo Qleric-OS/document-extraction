@@ -60,7 +60,7 @@ def analyze():
         return jsonify({"error": f"Unknown pack: {pack}. Available: {sorted(PACKS)}"}), 400
     try:
         data = file.read()
-        doc = parse(data, ext)
+        doc = parse(data, ext, os.environ.get("OCR_LANG", "eng"))
     except ValueError as e:
         return jsonify({"error": str(e)}), 422
     except Exception as e:
